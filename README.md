@@ -1,30 +1,48 @@
 # 🐙 GitHub Follower Checker
 
-Ein einfaches Python-Script, das deine **GitHub-Follower und Following** analysiert.  
-Es zeigt:
+Python-Scripte, die deine **GitHub-Follower und Following** analysieren.  
+Es gibt zwei Varianten:  
 
-- ✅ **Gegenseitige Follower** (folgt sich gegenseitig)  
-- ❌ **Leute, denen du folgst, die dir nicht zurück folgen**  
-- ⚠️ **Leute, die dir folgen, denen du nicht zurück folgst**  
+- 📊 `fol.py` → zeigt nur deine Follower-Analyse an  
+- 🚫 `fol1.py` → zeigt die Analyse **und entfolgt** optional allen, die dir nicht zurück folgen  
+
+---
 
 ## ✨ Features
 
-- 🚀 Läuft ohne externe Module  
-- 📈 Unterstützt beliebig viele Follower/Following  
-- 🖥️ Übersichtliche Konsolen-Ausgabe  
+- ✅ Übersichtliche Konsolen-Ausgabe  
+- 📈 Unterstützt beliebig viele Follower/Following (Pagination eingebaut)  
+- 🖥️ Zwei Modi:
+  - Analyse (sicher, keine Änderungen)  
+  - Analyse + automatisches Entfolgen (optional, mit Bestätigung)  
+
+---
+
+## 📂 Scripts im Überblick
+
+| Script         | Funktion                                                                 |
+|----------------|--------------------------------------------------------------------------|
+| 📊 `fol.py`    | Zeigt dir an, wer dir folgt, wem du folgst und wer dir nicht zurück folgt |
+| 🚫 `fol1.py` | Macht die gleiche Analyse wie `fol.py`, fragt dich dann aber, ob du allen entfolgen willst, die dir nicht zurück folgen |
+
+---
 
 ## 🛠️ Verwendung
 
-1. **Python 3 installieren**  
-2. **PAT (Personal Access Token) erstellen**  
-   - Gehe auf [GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)  
-   - Klicke auf **Generate new token → Tokens (classic)**  
-   - Gib dem Token einen Namen (z.B. „Follower Checker“)  
-   - Wähle nur die Berechtigung: `read:user`  
-   - Klicke auf **Generate token**  
-3. **Token in das Script einfügen**  
-4. **GitHub-Benutzernamen in das Script einfügen**  
-5. Script ausführen:
+### 1. Voraussetzungen
+- **Python 3 installieren**  
 
-```bash
-python fol.py
+### 2. Personal Access Token (PAT) erstellen
+1. Gehe auf [GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)  
+2. Klicke auf **Generate new token → Tokens (classic)**  
+3. Gib dem Token einen Namen (z. B. „Follower Checker“)  
+4. Wähle die Berechtigungen:  
+   - Für `fol.py`: `read:user`  
+   - Für `fol1.py`: `user:follow`  
+5. Klicke auf **Generate token** und kopiere ihn
+
+### 3. Token und GitHub-Namen ins Script einfügen
+Öffne `fol.py` oder `unfollow.py` und trage ein:
+```python
+username = "DEIN_GITHUB_USERNAME"
+token = "DEIN_PERSONAL_ACCESS_TOKEN"
