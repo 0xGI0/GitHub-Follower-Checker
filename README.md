@@ -80,10 +80,27 @@ TOKEN = "DEIN_PERSONAL_ACCESS_TOKEN"
 
 ### 🖥️ GUI-Version (Empfohlen)
 
-Für eine benutzerfreundliche grafische Oberfläche:
+#### 🚀 Einfacher Start (Doppelklick!)
+
+**Einfach doppelklicken:** `GitHubFollowerCheckerGUI.py`
+
+Die Anwendung erledigt automatisch alles für dich:
+- ✅ Prüft ob alle Dependencies installiert sind
+- ✅ Installiert fehlende Pakete automatisch
+- ✅ Zeigt Fehlermeldungen an (Fenster bleibt offen)
+- ✅ Keine zusätzlichen Dateien nötig!
+
+**Funktioniert auf:** Windows, Mac, Linux
+
+#### 💻 Alternativ: Start über Terminal
 
 ```bash
 python GitHubFollowerCheckerGUI.py
+```
+
+Oder:
+```bash
+python3 GitHubFollowerCheckerGUI.py
 ```
 
 **Features der GUI:**
