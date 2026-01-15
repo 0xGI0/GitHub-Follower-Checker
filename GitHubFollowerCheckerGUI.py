@@ -1,6 +1,52 @@
-import customtkinter as ctk
-import requests
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+GitHub Follower Checker - GUI Version
+Automatische Dependency-Installation und benutzerfreundliche Fehlerbehandlung
+"""
+
+import sys
+import subprocess
 import time
+
+# Funktion zum Installieren fehlender Pakete
+def install_package(package_name):
+    """Installiert ein fehlendes Python-Paket."""
+    print(f"\n📦 Installiere {package_name}...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+        print(f"✅ {package_name} erfolgreich installiert!")
+        return True
+    except subprocess.CalledProcessError:
+        print(f"❌ Fehler beim Installieren von {package_name}")
+        return False
+
+# Prüfe und installiere customtkinter
+try:
+    import customtkinter as ctk
+except ImportError:
+    print("⚠️ customtkinter ist nicht installiert!")
+    if install_package("customtkinter"):
+        import customtkinter as ctk
+    else:
+        print("\n❌ Konnte customtkinter nicht installieren!")
+        print("Bitte installiere es manuell mit: pip install customtkinter")
+        input("\nDrücke Enter zum Beenden...")
+        sys.exit(1)
+
+# Prüfe und installiere requests
+try:
+    import requests
+except ImportError:
+    print("⚠️ requests ist nicht installiert!")
+    if install_package("requests"):
+        import requests
+    else:
+        print("\n❌ Konnte requests nicht installieren!")
+        print("Bitte installiere es manuell mit: pip install requests")
+        input("\nDrücke Enter zum Beenden...")
+        sys.exit(1)
+
 import threading
 from typing import List, Set, Callable
 from tkinter import messagebox
@@ -327,5 +373,21 @@ class GitHubFollowerCheckerApp(ctk.CTk):
 
 
 if __name__ == "__main__":
-    app = GitHubFollowerCheckerApp()
-    app.mainloop()
+    try:
+        print("\n🚀 Starte GitHub Follower Checker GUI...")
+        print("📝 Alle Dependencies sind installiert!\n")
+        app = GitHubFollowerCheckerApp()
+        app.mainloop()
+    except Exception as e:
+        print("\n" + "="*50)
+        print("❌ FEHLER beim Starten der Anwendung!")
+        print("="*50)
+        print(f"\nFehlermeldung: {e}")
+        print(f"\nFehlertyp: {type(e).__name__}")
+        print("\n💡 Mögliche Lösungen:")
+        print("   1. Überprüfe deine Python-Installation")
+        print("   2. Installiere Dependencies: pip install -r requirements.txt")
+        print("   3. Führe das Skript im Terminal aus für mehr Details")
+        print("\n" + "="*50)
+        input("\n👆 Drücke Enter zum Beenden...")
+        sys.exit(1)

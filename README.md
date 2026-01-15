@@ -80,21 +80,19 @@ TOKEN = "DEIN_PERSONAL_ACCESS_TOKEN"
 
 ### 🖥️ GUI-Version (Empfohlen)
 
-#### 🚀 Einfacher Start mit Launcher (Empfohlen!)
+#### 🚀 Einfacher Start (Doppelklick!)
 
-**Windows:**
-- Doppelklick auf `start_gui.bat`
+**Einfach doppelklicken:** `GitHubFollowerCheckerGUI.py`
 
-**Linux / Mac:**
-- Doppelklick auf `start_gui.sh` (oder im Terminal: `./start_gui.sh`)
+Die Anwendung erledigt automatisch alles für dich:
+- ✅ Prüft ob alle Dependencies installiert sind
+- ✅ Installiert fehlende Pakete automatisch
+- ✅ Zeigt Fehlermeldungen an (Fenster bleibt offen)
+- ✅ Keine zusätzlichen Dateien nötig!
 
-Die Launcher-Skripte prüfen automatisch:
-- ✅ Ob Python installiert ist
-- ✅ Ob alle Dependencies installiert sind
-- ✅ Installieren fehlende Pakete automatisch
-- ✅ Zeigen Fehlermeldungen an (Fenster bleibt offen)
+**Funktioniert auf:** Windows, Mac, Linux
 
-#### 💻 Manueller Start über Terminal
+#### 💻 Alternativ: Start über Terminal
 
 ```bash
 python GitHubFollowerCheckerGUI.py
