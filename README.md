@@ -32,7 +32,12 @@ Python-Skript zum Analysieren deiner **GitHub-Follower/Following-Beziehungen** u
 * Abhängigkeiten:
 
 ```bash
-pip install requests
+pip install -r requirements.txt
+```
+
+Oder manuell:
+```bash
+pip install requests customtkinter
 ```
 
 Es wird ausschließlich die offizielle **GitHub REST API v3** verwendet.
@@ -53,6 +58,10 @@ Es wird ausschließlich die offizielle **GitHub REST API v3** verwendet.
 
 ## ⚙️ Konfiguration
 
+### Für die GUI-Version
+**Keine Konfiguration nötig!** Du gibst Username und Token direkt in der GUI ein. 🎉
+
+### Für die CLI-Version
 Im Skript musst du **Benutzername** und **Token** eintragen.
 
 Öffne `GitHubUnfollowerToollong.py` und trage deine Daten ein:
@@ -62,14 +71,43 @@ USERNAME = "DEIN_GITHUB_USERNAME"
 TOKEN = "DEIN_PERSONAL_ACCESS_TOKEN"
 ```
 
-> **Wichtig:**  
+> **Wichtig:**
 > Lass die Platzhalter **nicht** so stehen, sonst bricht das Skript mit einem `ValueError` ab.
 
 ---
 
 ## ▶️ Ausführung
 
-Ausführen im Projektordner `GitHub-Follower-Checker`:
+### 🖥️ GUI-Version (Empfohlen)
+
+Für eine benutzerfreundliche grafische Oberfläche:
+
+```bash
+python GitHubFollowerCheckerGUI.py
+```
+
+**Features der GUI:**
+* 🎨 Modernes Dark Mode Design mit CustomTkinter
+* 🔐 Sichere Token-Eingabe (Passwort-Feld)
+* 📊 Live-Log-Anzeige während der Analyse
+* 📈 Fortschrittsbalken beim Entfolgen
+* ✅ Validierung der Zugangsdaten beim Start
+* 🚫 Bestätigungsdialog vor dem Entfolgen
+* 🖱️ Einfache Bedienung mit Buttons
+* 🌐 Funktioniert auf Windows, Mac und Linux
+
+**So funktioniert's:**
+1. Trage deinen GitHub Username ein
+2. Füge dein Personal Access Token ein (wird maskiert angezeigt)
+3. Klicke auf "📊 Analyse starten"
+4. Warte auf die Ergebnisse
+5. Klicke auf "🚫 Entfolgen" um Nutzer zu entfolgen (mit Bestätigung)
+
+---
+
+### 💻 CLI-Version
+
+Für die Kommandozeile (ohne GUI):
 
 ```bash
 python GitHubUnfollowerToollong.py
