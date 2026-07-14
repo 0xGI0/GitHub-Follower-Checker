@@ -44,3 +44,8 @@ Thumbs.db
 # User credentials (sicherheitshalber)
 credentials.json
 .env
+*.token
+token.txt
+
+# Exportierte Analyse-Ergebnisse (können Nutzerdaten enthalten)
+*.csv

@@ -4,40 +4,52 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/QG1o/GitHub-Follower-Checker?style=flat)](https://github.com/QG1o/GitHub-Follower-Checker/stargazers)
 
-Python-Skript zum Analysieren deiner **GitHub-Follower/Following-Beziehungen** und zum optionalen automatischen **Entfolgen** von Nutzern, die dir nicht zurück folgen.
+Desktop-Tool zum Analysieren deiner **GitHub-Follower/Following-Beziehungen** – mit moderner
+CustomTkinter-Oberfläche, sortierbarer Ergebnistabelle, CSV-Export und optionalem
+**Entfolgen** von Nutzern, die dir nicht zurückfolgen.
+
+---
+
+## 📸 Screenshot
+
+![GitHub Follower Checker GUI](docs/screenshot.png)
 
 ---
 
 ## ✨ Features
 
-* **Analyse deiner Beziehungen**
-  + Wer folgt dir?
-  + Wem folgst du?
-  + Wer folgt dir nicht zurück?
-* **Automatisches Entfolgen (optional)**
-  + Entfolge allen, die dir nicht zurück folgen – mit Sicherheitsabfrage
-  + Schutz vor API-Limits durch kleine Pausen zwischen Requests
-* **Robuste Implementierung**
-  + Bessere Fehlerbehandlung (HTTP-Status, Exceptions, Timeouts)
-  + Nutzung einer `requests.Session` und Typannotationen
-  + Übersichtliche Statistiken nach dem Entfolgen
-  + Validierung der Zugangsdaten beim Start
-  + KeyboardInterrupt-Handling
+* **Moderne GUI** (CustomTkinter, Dark Mode als Standard, Light Mode umschaltbar)
+* **HiDPI-tauglich**: Display-Skalierung wird automatisch erkannt,
+  Zoom (100–200 %) per Dropdown einstellbar – Zoom und Theme werden lokal
+  gespeichert (`~/.config/github-follower-checker/`, keine Zugangsdaten)
+* **Sortierbare Ergebnistabelle** mit drei Ansichten:
+  + Folgen nicht zurück
+  + Follower
+  + Following
+  + Klick auf eine Spaltenüberschrift sortiert auf-/absteigend
+* **CSV-Export** der aktuellen Ansicht
+* **Sichere Token-Eingabe**
+  + Maskiertes Eingabefeld (einblendbar per Checkbox)
+  + Token wird **nicht gespeichert und nicht geloggt** – es bleibt nur im Arbeitsspeicher
+* **Reaktionsfähige Oberfläche**
+  + Alle API-Abfragen laufen in einem Hintergrund-Thread
+  + Ladeindikator und Live-Status während der Analyse
+  + Fortschrittsbalken beim Entfolgen
+* **Verständliche Fehlermeldungen**
+  + GitHub-Rate-Limit wird erkannt und mit Uhrzeit der Freigabe angezeigt
+  + Klare Hinweise bei ungültigem Token oder Netzwerkproblemen
+* **Entfolgen mit Sicherheitsabfrage** und Statusanzeige pro Nutzer
 
 ---
 
-## 🧩 Voraussetzungen
+## 🧩 Setup
 
-* **Python 3.x**
-* Abhängigkeiten:
+**Voraussetzung:** Python 3.9+
 
 ```bash
+git clone https://github.com/QG1o/GitHub-Follower-Checker.git
+cd GitHub-Follower-Checker
 pip install -r requirements.txt
-```
-
-Oder manuell:
-```bash
-pip install requests customtkinter
 ```
 
 Es wird ausschließlich die offizielle **GitHub REST API v3** verwendet.
@@ -46,7 +58,7 @@ Es wird ausschließlich die offizielle **GitHub REST API v3** verwendet.
 
 ## 🔑 GitHub Personal Access Token (PAT) erstellen
 
-1. Öffne auf GitHub:  
+1. Öffne auf GitHub:
    `Settings` → `Developer settings` → `Personal access tokens` → `Tokens (classic)`
 2. Klicke **„Generate new token (classic)"**
 3. Vergib einen Namen, z. B. `GitHub Follower Checker`
@@ -56,71 +68,25 @@ Es wird ausschließlich die offizielle **GitHub REST API v3** verwendet.
 
 ---
 
-## ⚙️ Konfiguration
-
-### Für die GUI-Version
-**Keine Konfiguration nötig!** Du gibst Username und Token direkt in der GUI ein. 🎉
-
-### Für die CLI-Version
-Im Skript musst du **Benutzername** und **Token** eintragen.
-
-Öffne `GitHubUnfollowerToollong.py` und trage deine Daten ein:
-
-```python
-USERNAME = "DEIN_GITHUB_USERNAME"
-TOKEN = "DEIN_PERSONAL_ACCESS_TOKEN"
-```
-
-> **Wichtig:**
-> Lass die Platzhalter **nicht** so stehen, sonst bricht das Skript mit einem `ValueError` ab.
-
----
-
 ## ▶️ Ausführung
 
-### 🖥️ GUI-Version (Empfohlen)
-
-#### 🚀 Einfacher Start (Doppelklick!)
-
-**Einfach doppelklicken:** `GitHubFollowerCheckerGUI.py`
-
-Die Anwendung erledigt automatisch alles für dich:
-- ✅ Prüft ob alle Dependencies installiert sind
-- ✅ Installiert fehlende Pakete automatisch
-- ✅ Zeigt Fehlermeldungen an (Fenster bleibt offen)
-- ✅ Keine zusätzlichen Dateien nötig!
-
-**Funktioniert auf:** Windows, Mac, Linux
-
-#### 💻 Alternativ: Start über Terminal
+### 🖥️ GUI-Version (empfohlen)
 
 ```bash
 python GitHubFollowerCheckerGUI.py
 ```
 
-Oder:
-```bash
-python3 GitHubFollowerCheckerGUI.py
-```
-
-**Features der GUI:**
-* 🎨 Modernes Dark Mode Design mit CustomTkinter
-* 🔐 Sichere Token-Eingabe (Passwort-Feld)
-* 📊 Live-Log-Anzeige während der Analyse
-* 📈 Fortschrittsbalken beim Entfolgen
-* ✅ Validierung der Zugangsdaten beim Start
-* 🚫 Bestätigungsdialog vor dem Entfolgen
-* 🖱️ Einfache Bedienung mit Buttons
-* 🌐 Funktioniert auf Windows, Mac und Linux
+Fehlende Pakete installiert das Skript beim ersten Start automatisch –
+dadurch funktioniert auch der Start per **Doppelklick** (Windows, Mac, Linux).
 
 **So funktioniert's:**
-1. Trage deinen GitHub Username ein
-2. Füge dein Personal Access Token ein (wird maskiert angezeigt)
-3. Klicke auf "📊 Analyse starten"
-4. Warte auf die Ergebnisse
-5. Klicke auf "🚫 Entfolgen" um Nutzer zu entfolgen (mit Bestätigung)
 
----
+1. GitHub-Username eintragen
+2. Personal Access Token einfügen (maskiert, wird nirgends gespeichert)
+3. **„Analyse starten"** klicken – der Fortschritt wird live angezeigt
+4. Ergebnisse in der Tabelle prüfen, bei Bedarf sortieren oder als **CSV exportieren**
+5. Optional: **„Entfolgen"** klicken – nach Bestätigungsdialog wird jedem Nutzer
+   aus der Ansicht „Folgen nicht zurück" entfolgt, mit Status pro Nutzer
 
 ### 💻 CLI-Version
 
@@ -130,56 +96,33 @@ Für die Kommandozeile (ohne GUI):
 python GitHubUnfollowerToollong.py
 ```
 
-Das Skript zeigt dir die Anzahl und Liste der Nutzer, die dir nicht zurück folgen, und fragt dann:
+Vorher im Skript `USERNAME` und `TOKEN` eintragen. Das Skript listet alle Nutzer,
+die dir nicht zurückfolgen, und fragt vor dem Entfolgen nach Bestätigung (`ja`/`nein`).
 
-```
-❗ Willst du X Nutzer entfolgen? (ja/nein):
-```
-
-Nur bei Eingabe von `ja` wird wirklich entfolgt.
-
-**Eigenschaften:**
-
-* Verwendet die Klasse `GitHubUnfollower`
-* Bessere Fehlerbehandlung (HTTP-Status, Timeouts, Exceptions)
-* Kurze Pausen zwischen Requests zum Schutz vor Rate-Limits
-* Übersichtliche Abschluss-Statistik:
-  + Wie viele Entfolgungen erfolgreich waren
-  + Wie viele fehlgeschlagen sind
-* Validierung der Zugangsdaten beim Start
-* Unterstützung für KeyboardInterrupt (Ctrl+C)
+> **Wichtig:** Die Datei mit eingetragenem Token **niemals committen oder hochladen**.
 
 ---
 
 ## 🔒 Sicherheit & Hinweise
 
-* **Kein Token committen!**  
-  Trage dein Token lokal ein, aber lade die Datei **nicht** mit Token zu GitHub hoch.
-* Wenn möglich, nutze einen **separaten Token** nur für dieses Tool.
-* Achte genau auf die **Bestätigungsabfrage** vor dem Entfolgen.
-* Das Skript respektiert GitHub's Rate-Limits durch kleine Pausen zwischen Requests.
+* **Kein Token committen!** Die GUI speichert das Token bewusst nicht –
+  es muss bei jedem Start neu eingegeben werden.
+* Nutze wenn möglich einen **separaten Token** nur für dieses Tool.
+* Exportierte CSV-Dateien enthalten Nutzernamen – `.gitignore` schließt `*.csv` bereits aus.
+* Das Tool respektiert GitHub-Rate-Limits durch Pausen zwischen Requests und
+  zeigt bei Erreichen des Limits an, ab wann es weitergeht.
 
 ---
 
 ## 🐛 Fehlerbehebung
 
-* **HTTP 401 / 403**
-  + Token falsch, abgelaufen oder Scope fehlt (`user:follow`).
-* **Leere Ausgabe / zu wenige Nutzer**
-  + Account ist privat / API-Limit erreicht / Netzwerkprobleme.
-* **`ValueError: Bitte trage deine GitHub-Zugangsdaten ein!`**
-  + Im Skript sind noch die Platzhalter-Werte gesetzt.
-* **Rate Limit Fehler**
-  + Das Skript hat bereits Pausen eingebaut. Bei sehr vielen Followern kann es trotzdem zu Limits kommen. Warte einige Minuten und versuche es erneut.
-
----
-
-## 💡 Tipps
-
-* Erstelle einen separaten GitHub-Token nur für dieses Tool
-* Teste zuerst mit einem Account, der nur wenige Follower hat
-* Das Skript zeigt dir immer eine Liste, bevor es entfolgt – nutze diese zur Kontrolle
-* Du kannst das Skript jederzeit mit Ctrl+C abbrechen
+| Problem | Ursache / Lösung |
+|---|---|
+| „Token ungültig oder abgelaufen" | Token prüfen, ggf. neu erstellen; Scope `user:follow` erforderlich |
+| „GitHub-Rate-Limit erreicht" | Warten bis zur angezeigten Uhrzeit, dann erneut versuchen |
+| „GitHub-API-Fehler (HTTP 404)" | Username prüfen – existiert der Account? |
+| „Keine Verbindung zur GitHub-API" | Internetverbindung / Firewall prüfen |
+| GUI startet nicht | `pip install -r requirements.txt` ausführen und im Terminal starten |
 
 ---
 
@@ -187,19 +130,15 @@ Nur bei Eingabe von `ja` wird wirklich entfolgt.
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
-Die MIT-Lizenz erlaubt die freie Verwendung, Modifikation und Weitergabe des Codes, solange der Copyright-Hinweis erhalten bleibt.
-
 ---
 
 ## ⚠️ Haftungsausschluss
 
-Dieses Tool wird "wie besehen" bereitgestellt. Nutze es auf **eigene Verantwortung**. Der Autor übernimmt keine Haftung für:
-- Verlust von Followern
-- Mögliche Verstöße gegen GitHub's Terms of Service
-- API-Rate-Limit-Probleme
-- Andere unerwünschte Folgen
+Dieses Tool wird „wie besehen" bereitgestellt. Nutze es auf **eigene Verantwortung**.
+Der Autor übernimmt keine Haftung für Verlust von Followern, mögliche Verstöße gegen
+GitHubs Terms of Service oder andere unerwünschte Folgen.
 
-**Empfehlung:** Teste das Tool zunächst mit einem Test-Account oder bei wenigen Followern.
+**Empfehlung:** Teste das Tool zunächst mit einem Account, der wenige Follower hat.
 
 ---
 
