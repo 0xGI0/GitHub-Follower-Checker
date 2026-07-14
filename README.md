@@ -1,8 +1,8 @@
 # 🐙 GitHub Follower Checker
 
-[![Python](https://img.shields.io/badge/Python-3.x-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/QG1o/GitHub-Follower-Checker?style=flat)](https://github.com/QG1o/GitHub-Follower-Checker/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/0xGI0/GitHub-Follower-Checker?style=flat)](https://github.com/0xGI0/GitHub-Follower-Checker/stargazers)
 
 Desktop-Tool zum Analysieren deiner **GitHub-Follower/Following-Beziehungen** – mit moderner
 CustomTkinter-Oberfläche, sortierbarer Ergebnistabelle, CSV-Export und optionalem
@@ -47,7 +47,7 @@ CustomTkinter-Oberfläche, sortierbarer Ergebnistabelle, CSV-Export und optional
 **Voraussetzung:** Python 3.9+
 
 ```bash
-git clone https://github.com/QG1o/GitHub-Follower-Checker.git
+git clone https://github.com/0xGI0/GitHub-Follower-Checker.git
 cd GitHub-Follower-Checker
 pip install -r requirements.txt
 ```
