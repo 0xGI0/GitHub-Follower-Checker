@@ -8,10 +8,16 @@ Die Oberfläche hängt sich über UiCallbacks an – dadurch ist die gesamte
 Logik ohne Fenster testbar.
 """
 
+import threading
+import time
 from datetime import datetime
 from typing import List, Optional, Set
 
+import requests
+
 from gfc_core import (
+    ACTION_DELAY,
+    AuthError,
     GitHubClient,
     HISTORY_LIMIT,
     RateLimitError,
@@ -22,9 +28,6 @@ from gfc_core import (
     compute_follower_delta,
     tr,
 )
-
-# Hinweis: threading, time, requests, ACTION_DELAY und AuthError kommen erst
-# mit den Workern in Task 3 dazu – hier noch nicht importieren (ruff F401).
 
 TAB_KEYS = ("unfollower", "fans", "followers", "following", "changes")
 
@@ -318,3 +321,210 @@ class AppController:
         else:
             status = tr("Analyse abgeschlossen: Alle folgen dir zurück. 🎉")
         self._set_busy(False, status)
+
+    # ------------------------------------------------------ Fragen/Texte
+
+    def bulk_users_and_question(self):
+        """Kandidatenliste plus Bestätigungsfrage fürs Bulk-Entfolgen."""
+        users = list(self.unfollow_candidates)
+        if len(users) == 1:
+            question = tr(
+                'Wirklich „{user}" entfolgen (folgt dir nicht zurück)?'
+            ).format(user=users[0])
+        else:
+            question = tr(
+                "Wirklich allen {n} Nutzern entfolgen, die dir nicht zurückfolgen?"
+            ).format(n=len(users))
+        protected = [
+            r["user"]
+            for r in self.rows["unfollower"]
+            if r["user"] in self.whitelist and r["status"] != tr("✓ Entfolgt")
+        ]
+        if protected:
+            question += tr(
+                "\n\n🛡 {n} geschützte Nutzer werden übersprungen."
+            ).format(n=len(protected))
+        return users, question
+
+    @staticmethod
+    def selection_question(users):
+        if len(users) == 1:
+            return tr('Wirklich „{user}" entfolgen?').format(user=users[0])
+        shown = ", ".join(users[:8])
+        if len(users) > 8:
+            shown += tr(" … und {n} weitere").format(n=len(users) - 8)
+        return tr("Wirklich {n} ausgewählten Nutzern entfolgen?\n\n{shown}").format(
+            n=len(users), shown=shown
+        )
+
+    # ----------------------------------------------------------- Analyse
+
+    def start_analysis(self, username, token):
+        self._pending_token = token
+        self._set_busy(True, tr("Validiere Zugangsdaten…"))
+        threading.Thread(
+            target=self._analysis_worker, args=(username, token), daemon=True
+        ).start()
+
+    def _analysis_worker(self, username, token):
+        try:
+            client = self.client_factory(username, token)
+            client.validate_credentials()
+
+            self.ui.status(tr("Lade Follower…"))
+            followers = client.fetch_all_users(
+                f"users/{username}/followers",
+                on_page=lambda p: self.ui.status(
+                    tr("Lade Follower… (Seite {page})").format(page=p)
+                ),
+            )
+
+            self.ui.status(tr("Lade Following…"))
+            following = client.fetch_all_users(
+                f"users/{username}/following",
+                on_page=lambda p: self.ui.status(
+                    tr("Lade Following… (Seite {page})").format(page=p)
+                ),
+            )
+
+            self.client = client
+            self.apply_results(followers, following)
+
+        except RateLimitError as err:
+            self._set_busy(
+                False, tr("GitHub-Rate-Limit erreicht – bitte später erneut versuchen.")
+            )
+            self.ui.rate_limited(err)
+        except AuthError:
+            self._fail(
+                tr('Token ungültig oder abgelaufen. Prüfe auch den Scope „user:follow".')
+            )
+        except requests.HTTPError as err:
+            code = err.response.status_code if err.response is not None else "?"
+            hint = tr(" Existiert der Username?") if code == 404 else ""
+            self._fail(
+                tr("GitHub-API-Fehler (HTTP {code}).{hint}").format(code=code, hint=hint)
+            )
+        except requests.RequestException:
+            self._fail(
+                tr("Keine Verbindung zur GitHub-API. Prüfe deine Internetverbindung.")
+            )
+
+    def _fail(self, message):
+        self._set_busy(False, message)
+        self.ui.error(message)
+
+    # --------------------------------------------------------- Entfolgen
+
+    def start_unfollow(self, users):
+        self._set_busy(True, tr("Entfolge Nutzer…"), determinate=True)
+        threading.Thread(
+            target=self._unfollow_worker, args=(list(users),), daemon=True
+        ).start()
+
+    def _unfollow_worker(self, users):
+        succeeded = []
+        failed = 0
+        total = len(users)
+        rate_limited = None
+
+        for idx, user in enumerate(users, 1):
+            try:
+                ok, status_text = self.client.unfollow(user)
+            except RateLimitError as err:
+                rate_limited = err
+                for skipped in users[idx - 1:]:
+                    self.set_row_status(skipped, tr("Übersprungen (Rate-Limit)"))
+                break
+            except requests.RequestException:
+                ok, status_text = False, tr("Netzwerkfehler")
+
+            if ok:
+                succeeded.append(user)
+                self.mark_unfollowed(user)
+            else:
+                failed += 1
+
+            self.set_row_status(user, status_text)
+            self.ui.progress(idx / total)
+            self.ui.status(
+                tr("Entfolge Nutzer… {idx}/{total}").format(idx=idx, total=total)
+            )
+            time.sleep(ACTION_DELAY)
+
+        self._finish_unfollow(succeeded, failed, rate_limited)
+
+    def _finish_unfollow(self, succeeded, failed, rate_limited):
+        self.unfollow_candidates = self.compute_candidates()
+        if succeeded:
+            self.last_unfollowed = list(succeeded)
+            self.ui.undo_changed(len(self.last_unfollowed))
+        self.ui.data_changed()
+
+        parts = [tr("{n} entfolgt").format(n=len(succeeded))]
+        if failed:
+            parts.append(tr("{n} fehlgeschlagen").format(n=failed))
+        self._set_busy(False, tr("Fertig: ") + ", ".join(parts) + ".")
+
+        if rate_limited:
+            self.ui.rate_limited(rate_limited)
+
+    # ----------------------------------------------------------- Folgen
+
+    def undo_unfollow(self):
+        self.start_follow(list(self.last_unfollowed), is_undo=True)
+
+    def start_follow(self, users, is_undo=False):
+        if not users or not self.client:
+            return
+        self._set_busy(True, tr("Folge Nutzern…"), determinate=True)
+        threading.Thread(
+            target=self._follow_worker, args=(list(users), is_undo), daemon=True
+        ).start()
+
+    def _follow_worker(self, users, is_undo):
+        succeeded = []
+        failed = 0
+        total = len(users)
+        rate_limited = None
+
+        for idx, user in enumerate(users, 1):
+            try:
+                ok, status_text = self.client.follow(user)
+            except RateLimitError as err:
+                rate_limited = err
+                for skipped in users[idx - 1:]:
+                    self.set_row_status(skipped, tr("Übersprungen (Rate-Limit)"))
+                break
+            except requests.RequestException:
+                ok, status_text = False, tr("Netzwerkfehler")
+
+            if ok:
+                succeeded.append(user)
+                self.mark_followed(user)
+            else:
+                failed += 1
+
+            self.set_row_status(user, status_text)
+            self.ui.progress(idx / total)
+            self.ui.status(
+                tr("Folge Nutzern… {idx}/{total}").format(idx=idx, total=total)
+            )
+            time.sleep(ACTION_DELAY)
+
+        self._finish_follow(succeeded, failed, rate_limited, is_undo)
+
+    def _finish_follow(self, succeeded, failed, rate_limited, is_undo):
+        if is_undo and succeeded:
+            self.last_unfollowed = []
+            self.ui.undo_changed(0)
+        self.unfollow_candidates = self.compute_candidates()
+        self.ui.data_changed()
+
+        parts = [tr("{n} gefolgt").format(n=len(succeeded))]
+        if failed:
+            parts.append(tr("{n} fehlgeschlagen").format(n=failed))
+        self._set_busy(False, tr("Fertig: ") + ", ".join(parts) + ".")
+
+        if rate_limited:
+            self.ui.rate_limited(rate_limited)
