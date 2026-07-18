@@ -782,7 +782,7 @@ class FollowerCheckerView(UiCallbacks):
         _save_settings(self.settings)
         self.status(tr("Sprache geändert – bitte starte die App neu."))
 
-    def on_export(self, e=None):
+    async def on_export(self, e=None):
         table = self.controller.csv_table(self.current_tab, self.filter_term)
         if len(table) <= 1:
             self._alert(
@@ -793,7 +793,7 @@ class FollowerCheckerView(UiCallbacks):
         if self.file_picker is None:
             return
         default_name = f"github_{self.current_tab}_{datetime.now():%Y-%m-%d}.csv"
-        path = self.file_picker.save_file(
+        path = await self.file_picker.save_file(
             dialog_title=tr("Ergebnis als CSV speichern"),
             file_name=default_name,
             allowed_extensions=["csv"],
