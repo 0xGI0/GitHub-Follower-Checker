@@ -381,3 +381,123 @@ def test_gui_end_to_end(gui, core, tmp_path, monkeypatch):
         assert app.undo_button.winfo_manager() == ""
     finally:
         app.destroy()
+
+
+# ---------------------------------------------------------- AppController
+
+
+class RecorderUi:
+    """Zeichnet Controller-Callbacks für Assertions auf."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __getattr__(self, name):
+        def record(*args):
+            self.calls.append((name,) + args)
+
+        return record
+
+    def last(self, name):
+        matches = [c for c in self.calls if c[0] == name]
+        return matches[-1] if matches else None
+
+
+class CtrlFakeClient:
+    username = "demo-user"
+    rate_remaining = None
+    rate_limit = None
+
+    def unfollow(self, user):
+        return True, "✓ Entfolgt"
+
+    def follow(self, user):
+        return True, "✓ Gefolgt"
+
+    def get_user(self, user):
+        return {"login": user}
+
+
+@pytest.fixture(scope="session")
+def controller_mod(core):
+    import gfc_controller
+
+    return gfc_controller
+
+
+def make_controller(controller_mod, monkeypatch):
+    monkeypatch.setattr(controller_mod, "_save_settings", lambda settings: None)
+    ui = RecorderUi()
+    return controller_mod.AppController(ui=ui, settings={}), ui
+
+
+def test_controller_apply_results(controller_mod, monkeypatch):
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.apply_results({"alice", "bob", "carol", "dave"}, {"bob", "carol", "erin", "frank"})
+    assert ctrl.stats() == {"followers": 4, "following": 4, "fans": 2, "unfollower": 2}
+    assert [r["user"] for r in ctrl.rows["unfollower"]] == ["erin", "frank"]
+    assert [r["user"] for r in ctrl.rows["fans"]] == ["alice", "dave"]
+    assert ctrl.unfollow_candidates == ["erin", "frank"]
+    assert ui.last("analysis_finished") is not None
+    assert ui.last("busy_changed") == ("busy_changed", False, False)
+    assert "2 Nutzer folgen dir nicht zurück" in ui.last("status")[1]
+
+
+def test_controller_history_and_delta(controller_mod, core, tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.client = CtrlFakeClient()
+    ctrl.apply_results({"alice", "bob", "carol", "dave"}, {"bob"})
+    assert "Erste Analyse" in ui.last("delta_changed")[1]
+    ctrl.apply_results({"alice", "bob", "carol", "neu-nutzer"}, {"bob"})
+    delta = ui.last("delta_changed")[1]
+    assert "+1 Follower: neu-nutzer" in delta
+    assert "−1 Follower: dave" in delta
+    assert ctrl.spark_counts == [4, 4]
+    assert any(
+        r["user"] == "dave" and "entfolgte dich" in r["status"] for r in ctrl.rows["changes"]
+    )
+    assert any(
+        r["user"] == "neu-nutzer" and "folgt dir seit" in r["status"]
+        for r in ctrl.rows["changes"]
+    )
+    assert "demo-user" in core._load_history()
+
+
+def test_controller_whitelist(controller_mod, monkeypatch):
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.apply_results({"alice"}, {"erin", "frank"})
+    ctrl.set_protected(["erin"], True)
+    assert ctrl.unfollow_candidates == ["frank"]
+    assert ctrl.settings["whitelist"] == ["erin"]
+    assert ui.last("data_changed") is not None
+    ctrl.set_protected(["erin"], False)
+    assert ctrl.unfollow_candidates == ["erin", "frank"]
+
+
+def test_controller_sort_and_filter(controller_mod, monkeypatch):
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.apply_results({"bob"}, {"anna", "bob", "Zoe"})
+    assert [r["user"] for r in ctrl.sorted_rows("following")] == ["anna", "bob", "Zoe"]
+    ctrl.sort_by("following", "user")   # gleiche Spalte → Richtung umkehren
+    assert [r["user"] for r in ctrl.sorted_rows("following")] == ["Zoe", "bob", "anna"]
+    assert [r["user"] for r in ctrl.sorted_rows("following", term="bo")] == ["bob"]
+
+
+def test_controller_csv_table(controller_mod, monkeypatch):
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.apply_results({"alice", "bob"}, {"bob", "erin"})
+    table = ctrl.csv_table("unfollower")
+    assert table[0] == ["username", "folgt_dir", "du_folgst", "status"]
+    assert table[1] == ["erin", "nein", "ja", ""]
+
+
+def test_controller_row_marks(controller_mod, monkeypatch):
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.apply_results({"alice", "bob"}, {"bob", "erin"})
+    ctrl.mark_unfollowed("erin")
+    assert "erin" not in ctrl.following
+    assert all(not r["you_follow"] for r in ctrl.rows["unfollower"] if r["user"] == "erin")
+    ctrl.set_row_status("erin", "✓ Entfolgt")
+    assert ctrl.compute_candidates() == []
+    assert ui.last("row_changed") == ("row_changed", "erin")
