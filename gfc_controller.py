@@ -257,6 +257,9 @@ class AppController:
         self.spark_counts = [len(e.get("followers", [])) for e in entries]
         self._rebuild_changes_rows(entries)
 
+        return self._delta_text(entries)
+
+    def _delta_text(self, entries):
         if len(entries) < 2:
             return tr(
                 "Erste Analyse gespeichert – Veränderungen "
@@ -291,6 +294,20 @@ class AppController:
                 tr("−{n} Follower: {names}").format(n=len(lost), names=fmt(lost))
             )
         return "\n".join(lines)
+
+    def refresh_language(self):
+        """Erzeugt sprachabhängige Ableitungen nach einem Live-Sprachwechsel neu.
+
+        Baut Delta-Text und Verlauf-Zeilen aus der gespeicherten Historie in der
+        aktuellen Sprache neu auf, ohne die Historie zu verändern.
+        """
+        if not self.client:
+            return None
+        entries = _normalize_history_entries(_load_history().get(self.client.username))
+        if not entries:
+            return None
+        self._rebuild_changes_rows(entries)
+        return self._delta_text(entries)
 
     # ----------------------------------------------------------- Ergebnis
 
@@ -338,7 +355,7 @@ class AppController:
         protected = [
             r["user"]
             for r in self.rows["unfollower"]
-            if r["user"] in self.whitelist and r["status"] != tr("✓ Entfolgt")
+            if r["user"] in self.whitelist and r["you_follow"]
         ]
         if protected:
             question += tr(
