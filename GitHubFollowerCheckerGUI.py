@@ -667,7 +667,7 @@ class FollowerCheckerView(UiCallbacks):
         page.theme_mode = (
             ft.ThemeMode.DARK if self.mode == "dark" else ft.ThemeMode.LIGHT
         )
-        page.window.min_width = 940
+        page.window.min_width = 990
         page.window.min_height = 560
         size = self.settings.get("window_size") or [1180, 740]
         try:
