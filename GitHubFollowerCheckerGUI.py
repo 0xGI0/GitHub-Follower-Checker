@@ -193,6 +193,12 @@ class FollowerCheckerView(UiCallbacks):
             options=[ft.DropdownOption(key=v, text=v) for v in values],
             value=current,
             expand=True,
+            dense=True,
+            text_size=self.s(12),
+            content_padding=ft.Padding.symmetric(
+                horizontal=self.s(8), vertical=self.s(4)
+            ),
+            border_color=self.c["border"],
             on_select=on_select,
         )
 
@@ -293,7 +299,7 @@ class FollowerCheckerView(UiCallbacks):
         self.rate_text = ft.Text("", size=s(10), color=self.c["muted"])
 
         return ft.Container(
-            width=s(300),
+            width=s(350),
             bgcolor=self.c["bg"],
             border=ft.Border.only(right=ft.BorderSide(1, self.c["border"])),
             padding=ft.Padding.symmetric(horizontal=s(16), vertical=s(14)),
