@@ -501,3 +501,118 @@ def test_controller_row_marks(controller_mod, monkeypatch):
     ctrl.set_row_status("erin", "✓ Entfolgt")
     assert ctrl.compute_candidates() == []
     assert ui.last("row_changed") == ("row_changed", "erin")
+
+
+class ImmediateCtrlThread:
+    """Thread-Ersatz: führt das Target synchron aus (für Controller-Tests)."""
+
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self._target = target
+        self._args = args
+        self._kwargs = kwargs or {}
+
+    def start(self):
+        self._target(*self._args, **self._kwargs)
+
+
+class AnalysisFakeClient:
+    def __init__(self, username, token):
+        self.username = username
+        self.rate_remaining = 4998
+        self.rate_limit = 5000
+
+    def validate_credentials(self):
+        pass
+
+    def fetch_all_users(self, endpoint, on_page=None):
+        if on_page:
+            on_page(1)
+        if endpoint.endswith("/followers"):
+            return {"alice", "bob"}
+        return {"bob", "erin"}
+
+
+@pytest.fixture()
+def sync_controller(controller_mod, core, monkeypatch, tmp_path):
+    # HISTORY_PATH IMMER umbiegen – die Worker-Tests schreiben sonst in die
+    # echte Nutzer-History unter ~/.config
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    monkeypatch.setattr(controller_mod.threading, "Thread", ImmediateCtrlThread)
+    monkeypatch.setattr(controller_mod, "ACTION_DELAY", 0)
+    monkeypatch.setattr(controller_mod, "_save_settings", lambda settings: None)
+    ui = RecorderUi()
+    return controller_mod.AppController(ui=ui, settings={}), ui
+
+
+def test_controller_analysis_flow(sync_controller):
+    ctrl, ui = sync_controller
+    ctrl.client_factory = AnalysisFakeClient
+    ctrl.start_analysis("demo-user", "tok-123")
+    assert ctrl.client is not None and ctrl.client.username == "demo-user"
+    assert ctrl.stats()["unfollower"] == 1
+    assert ui.last("persist_credentials") == ("persist_credentials", "demo-user", "tok-123")
+    assert ctrl.busy is False
+
+
+def test_controller_analysis_auth_error(controller_mod, sync_controller):
+    ctrl, ui = sync_controller
+
+    class BadClient(AnalysisFakeClient):
+        def validate_credentials(self):
+            raise controller_mod.AuthError("kaputt")
+
+    ctrl.client_factory = BadClient
+    ctrl.start_analysis("demo-user", "tok")
+    assert "Token ungültig" in ui.last("error")[1]
+    assert ctrl.busy is False
+
+
+def test_controller_unfollow_and_undo(controller_mod, sync_controller):
+    ctrl, ui = sync_controller
+    ctrl.client = CtrlFakeClient()
+    ctrl.apply_results({"alice", "bob"}, {"bob", "erin", "frank"})
+    ctrl.start_unfollow(["erin", "frank"])
+    assert "erin" not in ctrl.following and "frank" not in ctrl.following
+    assert ui.last("undo_changed") == ("undo_changed", 2)
+    assert "Fertig: 2 entfolgt." in ui.last("status")[1]
+    assert ctrl.unfollow_candidates == []
+    ctrl.undo_unfollow()
+    assert {"erin", "frank"} <= ctrl.following
+    assert ui.last("undo_changed") == ("undo_changed", 0)
+    assert "Fertig: 2 gefolgt." in ui.last("status")[1]
+
+
+def test_controller_unfollow_rate_limit(controller_mod, sync_controller):
+    ctrl, ui = sync_controller
+
+    class LimitedClient(CtrlFakeClient):
+        def __init__(self):
+            self.calls = 0
+
+        def unfollow(self, user):
+            self.calls += 1
+            if self.calls >= 2:
+                raise controller_mod.RateLimitError(None)
+            return True, "✓ Entfolgt"
+
+    ctrl.client = LimitedClient()
+    ctrl.apply_results({"alice"}, {"erin", "frank", "gerd"})
+    ctrl.start_unfollow(["erin", "frank", "gerd"])
+    assert ui.last("rate_limited") is not None
+    statuses = {r["user"]: r["status"] for r in ctrl.rows["following"]}
+    assert statuses["erin"] == "✓ Entfolgt"
+    assert statuses["frank"] == "Übersprungen (Rate-Limit)"
+    assert statuses["gerd"] == "Übersprungen (Rate-Limit)"
+
+
+def test_controller_questions(controller_mod, monkeypatch):
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.apply_results({"a"}, {"erin", "frank"})
+    ctrl.set_protected(["erin"], True)
+    users, question = ctrl.bulk_users_and_question()
+    assert users == ["frank"]
+    assert "🛡 1 geschützte Nutzer" in question
+    single = controller_mod.AppController.selection_question(["bob"])
+    assert '„bob"' in single
+    many = controller_mod.AppController.selection_question([f"u{i}" for i in range(10)])
+    assert "… und 2 weitere" in many
