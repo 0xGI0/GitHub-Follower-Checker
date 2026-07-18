@@ -672,3 +672,28 @@ def test_view_menu_protect_toggles(viewmod, monkeypatch, core, tmp_path):
     assert "erin" in view.controller.whitelist
     view.on_menu_protect("erin")
     assert "erin" not in view.controller.whitelist
+
+
+def test_view_menu_targets_union(viewmod, controller_mod, core, monkeypatch, tmp_path):
+    """⋯-Menü wirkt auf Auswahl ∪ angeklickte Zeile, gefiltert nach Aktion."""
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    monkeypatch.setattr(controller_mod.threading, "Thread", ImmediateCtrlThread)
+    monkeypatch.setattr(controller_mod, "ACTION_DELAY", 0)
+    view = demo_view(viewmod, monkeypatch)
+    monkeypatch.setattr(
+        view, "_confirm", lambda title, q, label, on_confirm: on_confirm()
+    )
+
+    # Entfolgen: Auswahl {bob, carol} + Klickzeile erin → alle drei entfolgt
+    view.on_tab("following")
+    view.on_select_row("bob", True)
+    view.on_select_row("carol", True)
+    view.on_menu_unfollow("erin")
+    assert not {"bob", "carol", "erin"} & view.controller.following
+    assert "frank" in view.controller.following
+
+    # Folgen: Auswahl {alice} + Klickzeile dave → beiden gefolgt (waren Fans)
+    view.on_tab("fans")
+    view.on_select_row("alice", True)
+    view.on_menu_follow("dave")
+    assert {"alice", "dave"} <= view.controller.following
