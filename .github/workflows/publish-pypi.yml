@@ -1,0 +1,30 @@
+name: PyPI
+
+# Manuell auslösen (Actions → PyPI → Run workflow).
+# Voraussetzung: Auf pypi.org unter "Publishing" einen Trusted Publisher
+# für dieses Repo anlegen (Workflow: publish-pypi.yml, Environment: pypi) –
+# dann braucht es kein API-Token im Repo.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Paket bauen
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Auf PyPI veröffentlichen (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1

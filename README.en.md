@@ -13,20 +13,19 @@ with a modern CustomTkinter interface, a sortable results table, CSV export
 and optional **unfollowing**: everyone who doesn't follow you back with one
 click, or precisely the users you select.
 
-> **Note:** The user interface is currently German. Contributions for an
-> English UI are welcome!
-
 ---
 
 ## 📸 Screenshot
 
-![GitHub Follower Checker GUI](docs/screenshot.png)
+![GitHub Follower Checker GUI](docs/screenshot-en.png)
 
 ---
 
 ## ✨ Features
 
 * **Modern GUI** (CustomTkinter, dark mode by default, switchable to light)
+* **Bilingual (English/German)**: follows your system language,
+  switchable via the language menu in the bottom-left corner (Auto/DE/EN)
 * **HiDPI-ready**: display scaling is detected automatically, zoom
   (100–200 %) selectable; zoom, theme and window size are stored locally
   (`~/.config/github-follower-checker/`, never credentials)

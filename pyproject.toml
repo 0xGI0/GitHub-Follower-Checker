@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "github-follower-checker"
-version = "1.1.0"
+version = "1.2.0"
 description = "Desktop-Tool zum Analysieren von GitHub-Follower/Following-Beziehungen"
 readme = "README.md"
 license = { text = "MIT" }
@@ -39,7 +39,6 @@ line-length = 100
 target-version = "py39"
 
 [tool.mypy]
-python_version = "3.9"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
