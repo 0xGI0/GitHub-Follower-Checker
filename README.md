@@ -4,13 +4,13 @@
 
 **Deutsch** · [English](README.en.md)
 
-[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/0xGI0/GitHub-Follower-Checker?style=flat)](https://github.com/0xGI0/GitHub-Follower-Checker/stargazers)
 
 Desktop-Tool zum Analysieren deiner **GitHub-Follower/Following-Beziehungen** – mit moderner
-CustomTkinter-Oberfläche, sortierbarer Ergebnistabelle, CSV-Export und optionalem
+Flet-Oberfläche im GitHub-Look, sortierbarer Ergebnistabelle, CSV-Export und optionalem
 **Entfolgen**: alle Nutzer, die dir nicht zurückfolgen, auf einen Klick – oder
 gezielt einzelne ausgewählte Nutzer.
 
@@ -24,7 +24,7 @@ gezielt einzelne ausgewählte Nutzer.
 
 ## ✨ Features
 
-* **Moderne GUI** (CustomTkinter, Dark Mode als Standard, Light Mode umschaltbar)
+* **Moderne GUI** (Flet, GitHub-Look, Dark Mode als Standard, Light Mode umschaltbar)
 * **Zweisprachig (Deutsch/Englisch)**: folgt automatisch der Systemsprache,
   umstellbar über das Sprachmenü unten links (Auto/DE/EN)
 * **HiDPI-tauglich**: Display-Skalierung wird automatisch erkannt,
@@ -79,7 +79,7 @@ gezielt einzelne ausgewählte Nutzer.
 [Releases-Seite](https://github.com/0xGI0/GitHub-Follower-Checker/releases) –
 einfach herunterladen und starten.
 
-**Aus dem Quellcode** (Python 3.9+):
+**Aus dem Quellcode** (Python 3.10+):
 
 ```bash
 git clone https://github.com/0xGI0/GitHub-Follower-Checker.git
@@ -169,6 +169,7 @@ kennt außerdem `--version` und `--quiet`.
 | „GitHub-API-Fehler (HTTP 404)" | Username prüfen – existiert der Account? |
 | „Keine Verbindung zur GitHub-API" | Internetverbindung / Firewall prüfen |
 | GUI startet nicht | `pip install -r requirements.txt` ausführen und im Terminal starten |
+| GUI startet unter Linux nicht (Fehler wegen `libmpv`) | Flet benötigt auf manchen Distributionen `libmpv`: Fedora `sudo dnf install mpv-libs`, Debian/Ubuntu `sudo apt install libmpv2` |
 
 ---
 

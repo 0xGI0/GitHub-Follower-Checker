@@ -4,14 +4,14 @@
 
 [Deutsch](README.md) · **English**
 
-[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Desktop tool for analyzing your **GitHub follower/following relationships** –
-with a modern CustomTkinter interface, a sortable results table, CSV export
-and optional **unfollowing**: everyone who doesn't follow you back with one
-click, or precisely the users you select.
+with a modern Flet interface in a GitHub look, a sortable results table, CSV
+export and optional **unfollowing**: everyone who doesn't follow you back with
+one click, or precisely the users you select.
 
 ---
 
@@ -23,7 +23,7 @@ click, or precisely the users you select.
 
 ## ✨ Features
 
-* **Modern GUI** (CustomTkinter, dark mode by default, switchable to light)
+* **Modern GUI** (Flet, GitHub look, dark mode by default, switchable to light)
 * **Bilingual (English/German)**: follows your system language,
   switchable via the language menu in the bottom-left corner (Auto/DE/EN)
 * **HiDPI-ready**: display scaling is detected automatically, zoom
@@ -60,7 +60,7 @@ click, or precisely the users you select.
 **Easiest:** grab a prebuilt binary (no Python required) from the
 [releases page](https://github.com/0xGI0/GitHub-Follower-Checker/releases).
 
-**From source** (Python 3.9+):
+**From source** (Python 3.10+):
 
 ```bash
 git clone https://github.com/0xGI0/GitHub-Follower-Checker.git
@@ -128,6 +128,19 @@ supports `--version` and `--quiet`.
   the whitelist contain **usernames only**, never credentials.
 * The tool respects GitHub rate limits by pausing between requests and
   shows when the limit resets.
+
+---
+
+## 🐛 Troubleshooting
+
+| Problem | Cause / fix |
+|---|---|
+| "Token invalid or expired" | Check the token, regenerate if needed; requires the `user:follow` scope |
+| "GitHub rate limit reached" | Wait until the shown time, then retry |
+| "GitHub API error (HTTP 404)" | Check the username – does the account exist? |
+| "No connection to the GitHub API" | Check your internet connection / firewall |
+| GUI doesn't start | Run `pip install -r requirements.txt` and start it from a terminal |
+| GUI doesn't start on Linux (`libmpv` error) | Flet needs `libmpv` on some distros: Fedora `sudo dnf install mpv-libs`, Debian/Ubuntu `sudo apt install libmpv2` |
 
 ---
 

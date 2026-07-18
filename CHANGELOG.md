@@ -4,12 +4,25 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/),
 die Versionierung an [SemVer](https://semver.org/lang/de/).
 
-## [Unveröffentlicht]
+## [2.0.0] – 2026-07-18
 
 ### Geändert
-
+- **Komplett neue Oberfläche:** GUI von CustomTkinter auf Flet umgestellt –
+  GitHub-Look (Dark/Light), Stat-Karten, Tab-Pills, Nutzerliste mit Avataren
+  und ⋯-Aktionsmenü, Verlauf als Timeline.
+- Kernlogik in `gfc_core.py` und `gfc_controller.py` ausgelagert; CLI
+  unverändert nutzbar.
+- „Token anzeigen“ ist jetzt das Augen-Symbol im Token-Feld; das
+  Rechtsklick-Menü wurde durch das ⋯-Menü pro Zeile ersetzt.
 - Pause zwischen Folgen/Entfolgen-Requests von 1 s auf 2 s erhöht –
-  konservativer gegenüber GitHubs Sekundär-Rate-Limits
+  konservativer gegenüber GitHubs Sekundär-Rate-Limits.
+
+### Entfernt
+- Abhängigkeiten `customtkinter` und `pillow` (ersetzt durch `flet`).
+
+### Hinweise
+- Einstellungen, Verlauf und Keyring-Token bleiben erhalten (gleiche Pfade).
+- Python ≥ 3.10 erforderlich.
 
 ## [1.2.0] – 2026-07-18
 

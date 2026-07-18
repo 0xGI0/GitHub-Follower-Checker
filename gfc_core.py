@@ -16,7 +16,7 @@ from typing import Callable, Optional, Set
 
 import requests
 
-__version__ = "1.2.0"
+__version__ = "2.0.0"
 
 KEYRING_SERVICE = "github-follower-checker"
 
