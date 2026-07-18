@@ -8,12 +8,11 @@ version = "1.2.0"
 description = "Desktop-Tool zum Analysieren von GitHub-Follower/Following-Beziehungen"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "requests>=2.31.0",
-    "customtkinter>=5.2.2",
+    "flet>=0.86,<0.87",
     "keyring>=24",
-    "pillow>=9",
 ]
 
 [project.urls]
@@ -33,7 +32,7 @@ github-follower-checker = "GitHubFollowerCheckerGUI:main"
 github-follower-checker-cli = "GitHubFollowerCheckerCLI:main"
 
 [tool.setuptools]
-py-modules = ["GitHubFollowerCheckerGUI", "GitHubFollowerCheckerCLI"]
+py-modules = ["gfc_core", "gfc_controller", "GitHubFollowerCheckerGUI", "GitHubFollowerCheckerCLI"]
 
 [tool.ruff]
 line-length = 100

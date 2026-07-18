@@ -1,39 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""GitHub Follower Checker – GUI (CustomTkinter).
+"""GitHub Follower Checker – GUI (Flet, GitHub-Look).
 
 Analysiert Follower/Following über die GitHub REST API v3 und kann Nutzern
-entfolgen – allen, die nicht zurückfolgen, oder gezielt in der Tabelle
-ausgewählten Nutzern – sowie Nutzern (zurück)folgen. Dazu: Fans-Ansicht,
-Filter, Whitelist geschützter Nutzer, Rechtsklick-Menü, Rückgängig-Funktion
-und ein lokaler Verlauf, der Follower-Veränderungen zwischen zwei Analysen
-anzeigt. Alle API-Aufrufe laufen in einem Hintergrund-Thread, damit die
+entfolgen – allen, die nicht zurückfolgen, oder gezielt ausgewählten
+Nutzern – sowie Nutzern (zurück)folgen. Dazu: Fans-Ansicht, Filter,
+Whitelist geschützter Nutzer, Zeilen-Aktionsmenü, Rückgängig-Funktion und
+ein lokaler Verlauf, der Follower-Veränderungen zwischen zwei Analysen
+anzeigt. Alle API-Aufrufe laufen in Hintergrund-Threads, damit die
 Oberfläche nicht einfriert. Das Token bleibt ausschließlich im
 Arbeitsspeicher – es wird weder gespeichert noch geloggt.
 """
 
-import csv
-import io
-import os
 import subprocess
 import sys
-import threading
-import time
-import webbrowser
-from datetime import datetime
-from pathlib import Path
-from tkinter import Canvas, Menu, PhotoImage, filedialog, font as tkfont, messagebox, ttk
-from typing import Optional, Set
 
 
 def _ensure_dependencies() -> None:
     """Installiert fehlende Pakete, damit der Doppelklick-Start funktioniert."""
     missing = []
     for import_name, pip_name in (
-        ("customtkinter", "customtkinter"),
+        ("flet", "flet>=0.86,<0.87"),
         ("requests", "requests"),
         ("keyring", "keyring"),
-        ("PIL", "pillow"),
     ):
         try:
             __import__(import_name)
@@ -53,9 +42,14 @@ def _ensure_dependencies() -> None:
 
 _ensure_dependencies()
 
-import customtkinter as ctk  # noqa: E402
-import requests  # noqa: E402
-from PIL import Image  # noqa: E402  (Abhängigkeit von customtkinter)
+import threading  # noqa: E402
+from typing import Optional, Set  # noqa: E402
+
+import flet as ft  # noqa: E402
+import flet.canvas as fcv  # noqa: E402
+
+# Hinweis: webbrowser kommt in Task 5 dazu, csv und datetime in Task 7 –
+# hier noch nicht importieren (ruff F401).
 
 try:
     import keyring  # noqa: E402
@@ -63,21 +57,13 @@ except Exception:  # keyring ist optional – ohne Backend einfach deaktivieren
     keyring = None  # type: ignore[assignment]
 
 from gfc_core import (  # noqa: E402
-    ACTION_DELAY,
-    AuthError,
-    GitHubClient,
-    HISTORY_LIMIT,
     KEYRING_SERVICE,
-    RateLimitError,
     __version__,
-    _load_history,
     _load_settings,
-    _normalize_history_entries,
-    _save_history,
     _save_settings,
-    compute_follower_delta,
     tr,
 )
+from gfc_controller import AppController, UiCallbacks  # noqa: E402
 
 TABS = (
     ("unfollower", tr("Folgen nicht zurück")),
@@ -86,318 +72,389 @@ TABS = (
     ("following", tr("Following")),
     ("changes", tr("Verlauf")),
 )
-
-TAB_LABELS = dict(TABS)
-LABEL_TO_KEY = {label: key for key, label in TABS}
-
-COLUMNS = ("user", "follows_you", "you_follow", "status")
 COLUMN_TITLES = {
     "user": "Username",
     "follows_you": tr("Folgt dir"),
     "you_follow": tr("Du folgst"),
     "status": "Status",
 }
-
 ZOOM_STEPS = (1.0, 1.25, 1.5, 1.75, 2.0)
 
-TREE_THEME = {
+# GitHub-Farbwelt (an Primer/github.com angelehnt)
+PALETTE = {
     "dark": {
-        "bg": "#1d1e1e",
-        "fg": "#e6e6e6",
-        "stripe": "#242526",
-        "heading_bg": "#2b2b2b",
-        "heading_fg": "#f0f0f0",
-        "heading_active": "#333333",
-        "selected": "#1f538d",
+        "bg": "#0d1117",
+        "card": "#161b22",
+        "border": "#30363d",
+        "text": "#e6edf3",
+        "muted": "#8b949e",
+        "green": "#3fb950",
+        "green_btn": "#238636",
+        "green_soft": "#12261e",
+        "red": "#f85149",
+        "red_btn": "#da3633",
+        "red_soft": "#2d1417",
+        "blue": "#58a6ff",
+        "hover": "#1f242c",
+        "selected": "#121d2f",
     },
     "light": {
-        "bg": "#fbfbfb",
-        "fg": "#1c1c1c",
-        "stripe": "#f1f1f1",
-        "heading_bg": "#e4e4e4",
-        "heading_fg": "#1c1c1c",
-        "heading_active": "#d8d8d8",
-        "selected": "#3a7ebf",
+        "bg": "#ffffff",
+        "card": "#f6f8fa",
+        "border": "#d0d7de",
+        "text": "#1f2328",
+        "muted": "#59636e",
+        "green": "#1a7f37",
+        "green_btn": "#1f883d",
+        "green_soft": "#dafbe1",
+        "red": "#cf222e",
+        "red_btn": "#cf222e",
+        "red_soft": "#ffebe9",
+        "blue": "#0969da",
+        "hover": "#eaeef2",
+        "selected": "#ddf4ff",
     },
 }
 
 
-class FollowerCheckerApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
+class FollowerCheckerView(UiCallbacks):
+    """Baut die Flet-Oberfläche und reagiert auf Controller-Ereignisse."""
 
-        self.settings = _load_settings()
-
-        ctk.set_appearance_mode(self.settings.get("appearance", "Dark"))
-        ctk.set_default_color_theme("blue")
-
-        # CustomTkinter erkennt die Display-Skalierung unter Linux/Wayland
-        # nicht selbst – gespeicherten bzw. erkannten Faktor anwenden.
-        self.ui_scale = float(self.settings.get("zoom") or self._detect_ui_scale())
-        ctk.set_widget_scaling(self.ui_scale)
-        ctk.set_window_scaling(self.ui_scale)
-
-        self.title("GitHub Follower Checker")
-        self.geometry("1180x740")
-        self._apply_minsize()
-        icon_path = Path(__file__).resolve().parent / "docs" / "icon.png"
-        if icon_path.exists():
-            try:
-                self.iconphoto(True, PhotoImage(file=str(icon_path)))
-            except Exception:
-                pass
-
-        self.client: Optional[GitHubClient] = None
-        self.followers: Set[str] = set()
-        self.following: Set[str] = set()
-        self.rows = {key: [] for key, _ in TABS}
-        self.sort_state = {}
-        self.unfollow_candidates = []
+    def __init__(self, page: Optional[ft.Page] = None, settings: Optional[dict] = None):
+        self.page = page
+        self.settings = settings if settings is not None else _load_settings()
+        self.scale = float(self.settings.get("zoom") or 1.0)
+        self.mode = self._resolve_mode(self.settings.get("appearance", "Dark"))
+        self.c = PALETTE[self.mode]
+        self.controller = AppController(ui=self, settings=self.settings)
         self.current_tab = "unfollower"
-        self._busy = False
-        self.whitelist: Set[str] = set(self.settings.get("whitelist", []))
-        self.last_unfollowed = []
-        self.sort_state["changes"] = ("status", True)  # Verlauf: Neuestes zuerst
-        self._spark_counts = []
-        self._profile_cache = {}
-        self._detail_after = None
-        self._pending_token = None
+        self.selection: Set[str] = set()
+        self.filter_term = ""
+        self._row_refs: dict = {}
+        self._profile_cache: dict = {}
+        self._detail_timer: Optional[threading.Timer] = None
+        self._last_delta = ""
+        self._build_controls()
 
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+    # ------------------------------------------------------------ Helfer
 
-        self._build_sidebar()
-        self._build_main()
-        self._style_treeview()
-        self._populate_tree()
+    def s(self, value: float) -> int:
+        """Skaliert einen Basis-Pixelwert mit der Zoomstufe."""
+        return round(value * self.scale)
 
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        # Manche Window-Manager stauchen das Fenster beim Start auf die
-        # Mindestgröße – Geometrie nach dem Mapping erneut durchsetzen.
-        self.after(250, self._restore_geometry)
+    def _resolve_mode(self, appearance: str) -> str:
+        if appearance == "Light":
+            return "light"
+        if appearance == "System" and self.page is not None:
+            try:
+                dark = self.page.platform_brightness == ft.Brightness.DARK
+                return "dark" if dark else "light"
+            except Exception:
+                return "dark"
+        return "dark"
 
-    def _restore_geometry(self):
-        saved = self.settings.get("window_geometry")
-        try:
-            if saved:
-                self.wm_geometry(saved)
-            else:
-                self.geometry("1180x740")
-        except Exception:
-            pass
+    def _update(self):
+        if self.page is not None:
+            self.page.update()
 
-    def _on_close(self):
-        self.settings["window_geometry"] = self.wm_geometry()
-        self.settings["whitelist"] = sorted(self.whitelist)
-        _save_settings(self.settings)
-        self.destroy()
+    def _card(self, content, padding: int = 14) -> ft.Container:
+        return ft.Container(
+            content=content,
+            bgcolor=self.c["card"],
+            border=ft.Border.all(1, self.c["border"]),
+            border_radius=self.s(8),
+            padding=self.s(padding),
+        )
+
+    def _section_label(self, text: str) -> ft.Text:
+        return ft.Text(
+            text, size=self.s(11), weight=ft.FontWeight.BOLD, color=self.c["muted"]
+        )
+
+    def _field(self, hint: str, password: bool = False) -> ft.TextField:
+        return ft.TextField(
+            hint_text=hint,
+            password=password,
+            can_reveal_password=password,  # Auge-Symbol ersetzt „Token anzeigen“
+            height=self.s(38),
+            text_size=self.s(13),
+            dense=True,
+            filled=True,
+            fill_color=self.c["card"],
+            border_color=self.c["border"],
+            focused_border_color=self.c["blue"],
+            border_radius=self.s(6),
+            on_submit=self.on_analyze,
+        )
+
+    def _footer_dropdown(self, values, current, on_select) -> ft.Dropdown:
+        return ft.Dropdown(
+            options=[ft.DropdownOption(key=v, text=v) for v in values],
+            value=current,
+            expand=True,
+            on_select=on_select,
+        )
 
     # ------------------------------------------------------------- Aufbau
 
-    def _build_sidebar(self):
-        sidebar = ctk.CTkFrame(self, width=300, corner_radius=0)
-        sidebar.grid(row=0, column=0, sticky="nsw")
-        # Kinder sind pack-verwaltet: pack_propagate stoppt das Schrumpfen
-        # auf Inhaltsbreite, grid_propagate würde hier nichts bewirken.
-        sidebar.pack_propagate(False)
-
-        ctk.CTkLabel(
-            sidebar,
-            text="🐙 Follower Checker",
-            font=ctk.CTkFont(size=21, weight="bold"),
-        ).pack(anchor="w", padx=20, pady=(14, 0))
-        ctk.CTkLabel(
-            sidebar,
-            text=tr("GitHub-Beziehungen analysieren"),
-            font=ctk.CTkFont(size=12),
-            text_color=("gray40", "gray60"),
-        ).pack(anchor="w", padx=20)
-
-        self._section_label(sidebar, tr("ZUGANGSDATEN"), pady=(16, 4))
-
-        self.username_entry = ctk.CTkEntry(
-            sidebar, placeholder_text="GitHub-Username", height=36
+    def _build_controls(self):
+        sidebar = self.build_sidebar()
+        main = self.build_main()
+        self.root = ft.Row(
+            [sidebar, main],
+            spacing=0,
+            expand=True,
+            vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        self.username_entry.pack(fill="x", padx=20, pady=(0, 8))
 
-        self.token_entry = ctk.CTkEntry(
-            sidebar, placeholder_text="Personal Access Token", height=36, show="•"
+    def build_sidebar(self) -> ft.Container:
+        s = self.s
+        self.username_field = self._field("GitHub-Username")
+        self.token_field = self._field("Personal Access Token", password=True)
+        self.remember_box = ft.Checkbox(
+            label=tr("Token merken (Schlüsselbund)"),
+            value=bool(self.settings.get("remember_token")),
+            visible=keyring is not None,
+            on_change=self.on_remember_toggle,
         )
-        self.token_entry.pack(fill="x", padx=20)
-        self.token_entry.bind("<Return>", lambda _e: self.start_analysis())
-
-        self.show_token = ctk.CTkCheckBox(
-            sidebar,
-            text=tr("Token anzeigen"),
-            font=ctk.CTkFont(size=12),
-            command=self._toggle_token_visibility,
-            checkbox_width=18,
-            checkbox_height=18,
+        self.analyze_button = ft.FilledButton(
+            content=ft.Text(
+                tr("Analyse starten"), size=s(13), weight=ft.FontWeight.BOLD
+            ),
+            height=s(38),
+            style=ft.ButtonStyle(
+                bgcolor=self.c["green_btn"],
+                color="#ffffff",
+                shape=ft.RoundedRectangleBorder(radius=s(6)),
+            ),
+            on_click=self.on_analyze,
         )
-        self.show_token.pack(anchor="w", padx=20, pady=(8, 0))
-
-        self.remember_token = None
-        if keyring is not None:
-            self.remember_token = ctk.CTkCheckBox(
-                sidebar,
-                text=tr("Token merken (Schlüsselbund)"),
-                font=ctk.CTkFont(size=12),
-                command=self._on_remember_toggle,
-                checkbox_width=18,
-                checkbox_height=18,
-            )
-            self.remember_token.pack(anchor="w", padx=20, pady=(6, 0))
-            if self.settings.get("remember_token"):
-                self.remember_token.select()
-                self._prefill_credentials()
-
-        self.analyze_button = ctk.CTkButton(
-            sidebar,
-            text=tr("Analyse starten"),
-            height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self.start_analysis,
+        self.progress_bar = ft.ProgressBar(
+            value=0, bar_height=s(4), color=self.c["blue"], bgcolor=self.c["border"]
         )
-        self.analyze_button.pack(fill="x", padx=20, pady=(12, 0))
-
-        self.progress = ctk.CTkProgressBar(sidebar, height=6)
-        self.progress.pack(fill="x", padx=20, pady=(8, 0))
-        self.progress.set(0)
-
-        self.status_label = ctk.CTkLabel(
-            sidebar,
-            text=tr("Bereit. Gib Username und Token ein."),
-            font=ctk.CTkFont(size=12),
-            text_color=("gray30", "gray65"),
-            wraplength=250,
-            justify="left",
-            anchor="w",
+        self.status_text = ft.Text(
+            tr("Bereit. Gib Username und Token ein."), size=s(12), color=self.c["muted"]
         )
-        self.status_label.pack(fill="x", padx=20, pady=(6, 0))
 
-        self._section_label(sidebar, tr("ERGEBNIS"), pady=(14, 4))
-
-        stats_card = ctk.CTkFrame(sidebar, corner_radius=10)
-        stats_card.pack(fill="x", padx=20)
         self.stat_values = {}
-        stats = (
-            ("followers", tr("Follower"), None),
-            ("following", tr("Following"), None),
-            ("fans", tr("Fans"), ("#2e7d32", "#66bb6a")),
-            ("unfollower", tr("Folgen nicht zurück"), ("#c62828", "#ef5350")),
+        stat_defs = (
+            ("followers", tr("Follower"), self.c["text"]),
+            ("following", tr("Following"), self.c["text"]),
+            ("fans", tr("Fans"), self.c["green"]),
+            ("unfollower", tr("Folgen nicht zurück"), self.c["red"]),
         )
-        for i, (key, title, accent) in enumerate(stats):
-            row = ctk.CTkFrame(stats_card, fg_color="transparent")
-            row.pack(
-                fill="x",
-                padx=14,
-                pady=(10 if i == 0 else 3, 10 if i == len(stats) - 1 else 3),
-            )
-            ctk.CTkLabel(
-                row,
-                text=title,
-                font=ctk.CTkFont(size=12),
-                text_color=("gray30", "gray65"),
-            ).pack(side="left")
-            value = ctk.CTkLabel(
-                row,
-                text="–",
-                font=ctk.CTkFont(size=16, weight="bold"),
-                text_color=accent,
-            )
-            value.pack(side="right")
+        stat_cards = []
+        for key, title, color in stat_defs:
+            value = ft.Text("–", size=s(22), weight=ft.FontWeight.BOLD, color=color)
             self.stat_values[key] = value
-
-        self._section_label(sidebar, tr("SEIT LETZTER ANALYSE"), pady=(14, 4))
-        self.delta_label = ctk.CTkLabel(
-            sidebar,
-            text=tr("Noch kein Vergleich vorhanden."),
-            font=ctk.CTkFont(size=11),
-            text_color=("gray30", "gray65"),
-            wraplength=250,
-            justify="left",
-            anchor="w",
+            stat_cards.append(
+                ft.Container(
+                    content=ft.Column(
+                        [value, ft.Text(title, size=s(11), color=self.c["muted"])],
+                        spacing=s(2),
+                    ),
+                    bgcolor=self.c["card"],
+                    border=ft.Border.all(1, self.c["border"]),
+                    border_radius=s(8),
+                    padding=s(12),
+                    expand=True,
+                )
+            )
+        stats_grid = ft.Column(
+            [ft.Row(stat_cards[:2], spacing=s(8)), ft.Row(stat_cards[2:], spacing=s(8))],
+            spacing=s(8),
         )
-        self.delta_label.pack(fill="x", padx=20)
 
+        self.delta_text = ft.Text(
+            tr("Noch kein Vergleich vorhanden."), size=s(11), color=self.c["muted"]
+        )
         # Follower-Verlauf als Mini-Diagramm (erscheint ab zwei Analysen)
-        self.spark_canvas = Canvas(
-            sidebar, height=36, width=250, highlightthickness=0, bd=0
+        self.spark_canvas = fcv.Canvas(
+            shapes=[], width=s(250), height=s(36), visible=False
         )
 
-        ctk.CTkLabel(
-            sidebar,
-            text=f"v{__version__} · MIT License · GitHub REST API v3",
-            font=ctk.CTkFont(size=10),
-            text_color=("gray45", "gray50"),
-        ).pack(side="bottom", pady=(0, 12))
-
-        footer_row = ctk.CTkFrame(sidebar, fg_color="transparent")
-        footer_row.pack(side="bottom", fill="x", padx=20, pady=(0, 10))
-        footer_row.grid_columnconfigure((0, 1, 2), weight=1, uniform="footer")
-
-        self.appearance_menu = ctk.CTkOptionMenu(
-            footer_row,
-            values=["Dark", "Light", "System"],
-            command=self._change_appearance,
-            height=28,
-            font=ctk.CTkFont(size=12),
+        self.theme_menu = self._footer_dropdown(
+            ["Dark", "Light", "System"],
+            self.settings.get("appearance", "Dark"),
+            self.on_appearance,
         )
-        self.appearance_menu.set(self.settings.get("appearance", "Dark"))
-        self.appearance_menu.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        self.zoom_menu = self._footer_dropdown(
+            [f"{int(step * 100)} %" for step in ZOOM_STEPS],
+            f"{int(self.scale * 100)} %",
+            self.on_zoom,
+        )
+        lang = str(self.settings.get("language", "auto")).lower()
+        self.language_menu = self._footer_dropdown(
+            ["Auto", "DE", "EN"],
+            {"de": "DE", "en": "EN"}.get(lang, "Auto"),
+            self.on_language,
+        )
+        self.rate_text = ft.Text("", size=s(10), color=self.c["muted"])
 
-        self.zoom_menu = ctk.CTkOptionMenu(
-            footer_row,
-            values=[f"{int(step * 100)} %" for step in ZOOM_STEPS],
-            command=self._change_zoom,
-            height=28,
-            font=ctk.CTkFont(size=12),
+        return ft.Container(
+            width=s(300),
+            bgcolor=self.c["bg"],
+            border=ft.Border.only(right=ft.BorderSide(1, self.c["border"])),
+            padding=ft.Padding.symmetric(horizontal=s(16), vertical=s(14)),
+            content=ft.Column(
+                [
+                    ft.Text(
+                        "🐙 Follower Checker",
+                        size=s(20),
+                        weight=ft.FontWeight.BOLD,
+                        color=self.c["text"],
+                    ),
+                    ft.Text(
+                        tr("GitHub-Beziehungen analysieren"),
+                        size=s(12),
+                        color=self.c["muted"],
+                    ),
+                    ft.Container(height=s(8)),
+                    self._section_label(tr("ZUGANGSDATEN")),
+                    self.username_field,
+                    self.token_field,
+                    self.remember_box,
+                    self.analyze_button,
+                    self.progress_bar,
+                    self.status_text,
+                    ft.Container(height=s(6)),
+                    self._section_label(tr("ERGEBNIS")),
+                    stats_grid,
+                    ft.Container(height=s(6)),
+                    self._section_label(tr("SEIT LETZTER ANALYSE")),
+                    self.delta_text,
+                    self.spark_canvas,
+                    ft.Column(
+                        [
+                            ft.Row(
+                                [self.theme_menu, self.zoom_menu, self.language_menu],
+                                spacing=s(6),
+                            ),
+                            self.rate_text,
+                            ft.Text(
+                                f"v{__version__} · MIT License · GitHub REST API v3",
+                                size=s(10),
+                                color=self.c["muted"],
+                            ),
+                        ],
+                        spacing=s(4),
+                        expand=True,
+                        alignment=ft.MainAxisAlignment.END,
+                    ),
+                ],
+                spacing=s(8),
+                expand=True,
+                scroll=ft.ScrollMode.AUTO,
+            ),
         )
-        self.zoom_menu.set(f"{int(self.ui_scale * 100)} %")
-        self.zoom_menu.grid(row=0, column=1, sticky="ew", padx=(3, 3))
 
-        self.language_menu = ctk.CTkOptionMenu(
-            footer_row,
-            values=["Auto", "DE", "EN"],
-            command=self._change_language,
-            height=28,
-            font=ctk.CTkFont(size=12),
+    def build_main(self) -> ft.Container:
+        # Platzhalter – Task 5 baut Tabs, Filter und Nutzerliste hier auf.
+        s = self.s
+        self.export_button = ft.OutlinedButton(
+            content=ft.Text(tr("⬇  CSV exportieren"), size=s(12), color=self.c["text"]),
+            style=ft.ButtonStyle(
+                side=ft.BorderSide(1, self.c["border"]),
+                shape=ft.RoundedRectangleBorder(radius=s(6)),
+            ),
+            on_click=self.on_export,
         )
-        current_lang = str(self.settings.get("language", "auto")).lower()
-        self.language_menu.set(
-            {"de": "DE", "en": "EN"}.get(current_lang, "Auto")
-        )
-        self.language_menu.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+        return ft.Container(expand=True, bgcolor=self.c["bg"], padding=s(20))
 
-        self.rate_label = ctk.CTkLabel(
-            sidebar,
-            text="",
-            font=ctk.CTkFont(size=10),
-            text_color=("gray45", "gray50"),
-            anchor="w",
+    # ------------------------------------------------ Fenster & Lebenslauf
+
+    def mount(self, page: ft.Page):
+        self.page = page
+        page.title = "GitHub Follower Checker"
+        page.padding = 0
+        page.bgcolor = self.c["bg"]
+        page.theme_mode = (
+            ft.ThemeMode.DARK if self.mode == "dark" else ft.ThemeMode.LIGHT
         )
-        self.rate_label.pack(side="bottom", fill="x", padx=20, pady=(0, 4))
+        page.window.min_width = 940
+        page.window.min_height = 560
+        size = self.settings.get("window_size") or [1180, 740]
+        try:
+            page.window.width, page.window.height = int(size[0]), int(size[1])
+        except (TypeError, ValueError, IndexError):
+            page.window.width, page.window.height = 1180, 740
+        page.window.prevent_close = True
+        page.window.on_event = self.on_window_event
+        self.file_picker = ft.FilePicker()
+        page.services.append(self.file_picker)
+        # „System“-Theme lässt sich erst mit bekannter Page auflösen
+        if self.settings.get("appearance", "Dark") == "System":
+            resolved = self._resolve_mode("System")
+            if resolved != self.mode:
+                self.mode = resolved
+                self.c = PALETTE[self.mode]
+                self._build_controls()
+                page.theme_mode = (
+                    ft.ThemeMode.DARK if self.mode == "dark" else ft.ThemeMode.LIGHT
+                )
+        page.add(self.root)
+        self._prefill_credentials()
+        page.update()
+
+    def on_window_event(self, e):
+        if e.type == ft.WindowEventType.CLOSE:
+            try:
+                self.settings["window_size"] = [
+                    int(self.page.window.width or 1180),
+                    int(self.page.window.height or 740),
+                ]
+            except (TypeError, ValueError):
+                pass
+            self.settings["whitelist"] = sorted(self.controller.whitelist)
+            _save_settings(self.settings)
+            self.page.window.destroy()
+
+    def _rebuild(self):
+        """Baut die Oberfläche nach Theme-/Zoomwechsel komplett neu auf."""
+        keep_user = getattr(self, "username_field", None) and self.username_field.value
+        keep_token = getattr(self, "token_field", None) and self.token_field.value
+        keep_status = getattr(self, "status_text", None) and self.status_text.value
+        self.c = PALETTE[self.mode]
+        self._build_controls()
+        if keep_user:
+            self.username_field.value = keep_user
+        if keep_token:
+            self.token_field.value = keep_token
+        if keep_status:
+            self.status_text.value = keep_status
+        if self._last_delta:
+            self.delta_text.value = self._last_delta
+        if self.page is not None:
+            self.page.bgcolor = self.c["bg"]
+            self.page.theme_mode = (
+                ft.ThemeMode.DARK if self.mode == "dark" else ft.ThemeMode.LIGHT
+            )
+            self.page.controls.clear()
+            self.page.add(self.root)
+        self.refresh_all()
+
+    # ------------------------------------------------------ Zugangsdaten
 
     def _prefill_credentials(self):
         """Füllt Username/Token aus Settings und Schlüsselbund vor."""
+        if keyring is None or not self.settings.get("remember_token"):
+            return
         last = self.settings.get("last_username")
         if not last:
             return
-        self.username_entry.insert(0, last)
+        self.username_field.value = last
         try:
             token = keyring.get_password(KEYRING_SERVICE, last)
         except Exception:
             token = None
         if token:
-            self.token_entry.insert(0, token)
-            self.status_label.configure(
-                text=tr("Zugangsdaten aus dem Schlüsselbund geladen.")
-            )
+            self.token_field.value = token
+            self.status_text.value = tr("Zugangsdaten aus dem Schlüsselbund geladen.")
 
-    def _on_remember_toggle(self):
-        remember = bool(self.remember_token.get())
+    def on_remember_toggle(self, e=None):
+        remember = bool(self.remember_box.value)
         self.settings["remember_token"] = remember
-        if not remember:
+        if not remember and keyring is not None:
             last = self.settings.get("last_username")
             if last:
                 try:
@@ -406,659 +463,158 @@ class FollowerCheckerApp(ctk.CTk):
                     pass
         _save_settings(self.settings)
 
-    def _persist_credentials(self, username, token):
+    def persist_credentials(self, username, token):
         """Speichert Token im Schlüsselbund, wenn „Token merken“ aktiv ist."""
         self.settings["last_username"] = username
-        if self.remember_token is not None and self.remember_token.get():
+        if keyring is not None and self.remember_box.value:
             try:
                 keyring.set_password(KEYRING_SERVICE, username, token)
             except Exception:
                 pass
         _save_settings(self.settings)
 
-    def _change_language(self, choice):
-        self.settings["language"] = {"DE": "de", "EN": "en"}.get(choice, "auto")
-        _save_settings(self.settings)
-        self.status_label.configure(
-            text=tr("Sprache geändert – bitte starte die App neu.")
-        )
-
-    def _update_rate_label(self):
-        remaining = getattr(self.client, "rate_remaining", None)
-        limit = getattr(self.client, "rate_limit", None)
-        if remaining is not None and limit:
-            self.rate_label.configure(text=f"{tr('API-Limit')}: {remaining}/{limit}")
-
-    @staticmethod
-    def _section_label(parent, text, pady):
-        ctk.CTkLabel(
-            parent,
-            text=text,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color=("gray40", "gray55"),
-        ).pack(anchor="w", padx=20, pady=pady)
-
-    def _build_main(self):
-        main = ctk.CTkFrame(self, fg_color="transparent")
-        main.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-        main.grid_columnconfigure(0, weight=1)
-        main.grid_rowconfigure(1, weight=1)
-
-        top_bar = ctk.CTkFrame(main, fg_color="transparent")
-        top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-
-        self.segment = ctk.CTkSegmentedButton(
-            top_bar,
-            values=[label for _, label in TABS],
-            command=self._on_tab_change,
-            font=ctk.CTkFont(size=12),
-        )
-        self.segment.set(TAB_LABELS["unfollower"])
-        self.segment.pack(side="left")
-
-        self.export_button = ctk.CTkButton(
-            top_bar,
-            text=tr("⬇  CSV exportieren"),
-            width=150,
-            height=32,
-            font=ctk.CTkFont(size=12),
-            fg_color="transparent",
-            border_width=1,
-            border_color=("gray55", "gray40"),
-            text_color=("gray15", "gray85"),
-            hover_color=("gray85", "gray25"),
-            command=self.export_csv,
-        )
-        self.export_button.pack(side="right")
-
-        self.search_entry = ctk.CTkEntry(
-            top_bar,
-            placeholder_text=tr("🔍  Nutzer filtern…"),
-            width=180,
-            height=32,
-            font=ctk.CTkFont(size=12),
-        )
-        self.search_entry.pack(side="right", padx=(0, 8))
-        self.search_entry.bind("<KeyRelease>", lambda _e: self._populate_tree())
-        self.search_entry.bind(
-            "<Escape>",
-            lambda _e: (self.search_entry.delete(0, "end"), self._populate_tree()),
-        )
-
-        self.table_frame = ctk.CTkFrame(main, corner_radius=10)
-        self.table_frame.grid(row=1, column=0, sticky="nsew")
-
-        self.tree = ttk.Treeview(
-            self.table_frame,
-            columns=COLUMNS,
-            show="headings",
-            style="Checker.Treeview",
-            selectmode="extended",
-        )
-        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._on_selection_change())
-        self.tree.bind("<Button-3>", self._show_context_menu)
-        self.tree.bind("<Double-1>", self._on_double_click)
-        self.tree.column("user", width=280, anchor="w")
-        self.tree.column("follows_you", width=140, anchor="center", stretch=False)
-        self.tree.column("you_follow", width=140, anchor="center", stretch=False)
-        self.tree.column("status", width=200, anchor="w", stretch=False)
-
-        scrollbar = ctk.CTkScrollbar(self.table_frame, command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y", padx=(0, 4), pady=8)
-        self.tree.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
-
-        self.empty_label = ctk.CTkLabel(
-            self.table_frame,
-            text=tr("Noch keine Daten.\nStarte links eine Analyse."),
-            font=ctk.CTkFont(size=14),
-            text_color=("gray45", "gray55"),
-            justify="center",
-        )
-
-        # Profil-Panel: erscheint, wenn genau ein Nutzer ausgewählt ist
-        self.detail_frame = ctk.CTkFrame(main, corner_radius=10)
-        self.detail_avatar = ctk.CTkLabel(self.detail_frame, text="")
-        self.detail_avatar.pack(side="left", padx=(12, 10), pady=8)
-        self.detail_text = ctk.CTkLabel(
-            self.detail_frame,
-            text="",
-            font=ctk.CTkFont(size=12),
-            justify="left",
-            anchor="w",
-        )
-        self.detail_text.pack(side="left", fill="x", expand=True, pady=8, padx=(0, 12))
-
-        bottom_bar = ctk.CTkFrame(main, fg_color="transparent")
-        bottom_bar.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-
-        self.unfollow_button = ctk.CTkButton(
-            bottom_bar,
-            text=tr("🚫 Alle Nicht-Folgenden"),
-            width=190,
-            height=34,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=("#c62828", "#b3261e"),
-            hover_color=("#a91f1f", "#8c1d18"),
-            state="disabled",
-            command=self.confirm_unfollow,
-        )
-        self.unfollow_button.pack(side="right")
-
-        self.unfollow_selected_button = ctk.CTkButton(
-            bottom_bar,
-            text=tr("Auswahl entfolgen"),
-            width=150,
-            height=34,
-            font=ctk.CTkFont(size=13),
-            fg_color="transparent",
-            border_width=1,
-            border_color=("#c62828", "#b3261e"),
-            text_color=("#c62828", "#ef5350"),
-            hover_color=("gray85", "gray25"),
-            state="disabled",
-            command=self.confirm_unfollow_selection,
-        )
-        self.unfollow_selected_button.pack(side="right", padx=(0, 8))
-
-        # Erscheint erst nach einem Entfolgen-Lauf (folgt den Nutzern wieder)
-        self.undo_button = ctk.CTkButton(
-            bottom_bar,
-            text=tr("↩ Rückgängig"),
-            width=140,
-            height=34,
-            font=ctk.CTkFont(size=13),
-            fg_color="transparent",
-            border_width=1,
-            border_color=("gray55", "gray40"),
-            text_color=("gray15", "gray85"),
-            hover_color=("gray85", "gray25"),
-            command=self.undo_unfollow,
-        )
-
-        ctk.CTkLabel(
-            bottom_bar,
-            text=tr("Tipp: Strg/Shift-Klick wählt mehrere, Rechtsklick öffnet Aktionen."),
-            font=ctk.CTkFont(size=11),
-            text_color=("gray45", "gray55"),
-            anchor="w",
-        ).pack(side="left", fill="x")
-
-    def _style_treeview(self):
-        mode = "dark" if ctk.get_appearance_mode() == "Dark" else "light"
-        colors = TREE_THEME[mode]
-        family = tkfont.nametofont("TkDefaultFont").actual("family")
-
-        style = ttk.Style(self)
-        style.theme_use("clam")
-        # Rahmenelemente des clam-Themes entfernen, nur die Datenfläche zeichnen
-        style.layout(
-            "Checker.Treeview",
-            [("Checker.Treeview.treearea", {"sticky": "nswe"})],
-        )
-        # ttk skaliert nicht mit CustomTkinter mit – Zoomfaktor selbst anwenden
-        scale = self.ui_scale
-        style.configure(
-            "Checker.Treeview",
-            background=colors["bg"],
-            fieldbackground=colors["bg"],
-            foreground=colors["fg"],
-            rowheight=int(32 * scale),
-            borderwidth=0,
-            relief="flat",
-            font=(family, int(10 * scale)),
-        )
-        style.configure(
-            "Checker.Treeview.Heading",
-            background=colors["heading_bg"],
-            foreground=colors["heading_fg"],
-            relief="flat",
-            borderwidth=0,
-            padding=(int(10 * scale), int(8 * scale)),
-            font=(family, int(10 * scale), "bold"),
-        )
-        style.map(
-            "Checker.Treeview.Heading",
-            background=[("active", colors["heading_active"])],
-        )
-        style.map(
-            "Checker.Treeview",
-            background=[("selected", colors["selected"])],
-            foreground=[("selected", "#ffffff")],
-        )
-        self.tree.tag_configure("odd", background=colors["stripe"])
-        self.table_frame.configure(fg_color=colors["bg"])
-
-        self.tree.column("user", width=int(280 * scale), anchor="w")
-        self.tree.column("follows_you", width=int(140 * scale), anchor="center", stretch=False)
-        self.tree.column("you_follow", width=int(140 * scale), anchor="center", stretch=False)
-        self.tree.column("status", width=int(200 * scale), anchor="w", stretch=False)
-
-        self._draw_sparkline()
-
-    # ---------------------------------------------------------- Tabelle
-
-    def _on_tab_change(self, label):
-        self.current_tab = LABEL_TO_KEY[label]
-        self._populate_tree()
-
-    def _sort_by(self, col):
-        prev_col, prev_reverse = self.sort_state.get(self.current_tab, ("user", False))
-        reverse = not prev_reverse if prev_col == col else False
-        self.sort_state[self.current_tab] = (col, reverse)
-        self._populate_tree()
-
-    @staticmethod
-    def _sort_key(row, col):
-        if col == "user":
-            return (row["user"].lower(),)
-        if col in ("follows_you", "you_follow"):
-            return (row[col], row["user"].lower())
-        # Verlauf-Zeilen tragen einen ISO-Zeitstempel als Sortierschlüssel
-        return (row.get("sort", row["status"]), row["user"].lower())
-
-    def _visible_rows(self):
-        rows = self.rows[self.current_tab]
-        term = self.search_entry.get().strip().lower()
-        if term:
-            rows = [r for r in rows if term in r["user"].lower()]
-        return rows
-
-    def _populate_tree(self):
-        selected = set(self.tree.selection())
-        self.tree.delete(*self.tree.get_children())
-
-        col, reverse = self.sort_state.get(self.current_tab, ("user", False))
-        rows = sorted(
-            self._visible_rows(),
-            key=lambda r: self._sort_key(r, col),
-            reverse=reverse,
-        )
-        for index, row in enumerate(rows):
-            shield = "🛡 " if row["user"] in self.whitelist else ""
-            self.tree.insert(
-                "",
-                "end",
-                iid=row["user"],
-                tags=("odd",) if index % 2 else (),
-                values=(
-                    shield + row["user"],
-                    "✓" if row["follows_you"] else "–",
-                    "✓" if row["you_follow"] else "–",
-                    row["status"],
-                ),
-            )
-        keep = [r["user"] for r in rows if r["user"] in selected]
-        if keep:
-            self.tree.selection_set(keep)
-
-        for c in COLUMNS:
-            arrow = ("  ↓" if reverse else "  ↑") if c == col else ""
-            self.tree.heading(
-                c,
-                text=COLUMN_TITLES[c] + arrow,
-                anchor="center" if c in ("follows_you", "you_follow") else "w",
-                command=lambda c=c: self._sort_by(c),
-            )
-
-        if rows:
-            self.empty_label.place_forget()
-        else:
-            term = self.search_entry.get().strip()
-            self.empty_label.configure(
-                text=tr("Keine Treffer für „{term}“.").format(term=term)
-                if term
-                else tr("Noch keine Daten.\nStarte links eine Analyse.")
-            )
-            self.empty_label.place(relx=0.5, rely=0.5, anchor="center")
-
-        self._update_unfollow_buttons()
-
-    def _rebuild_rows(self):
-        def row(user):
-            return {
-                "user": user,
-                "follows_you": user in self.followers,
-                "you_follow": user in self.following,
-                "status": "",
-            }
-
-        by_name = lambda u: u.lower()  # noqa: E731
-        self.rows["followers"] = [row(u) for u in sorted(self.followers, key=by_name)]
-        self.rows["following"] = [row(u) for u in sorted(self.following, key=by_name)]
-        self.rows["unfollower"] = [
-            row(u) for u in sorted(self.following - self.followers, key=by_name)
-        ]
-        self.rows["fans"] = [
-            row(u) for u in sorted(self.followers - self.following, key=by_name)
-        ]
-
-    def _set_row_status(self, user, text):
-        for key, rows in self.rows.items():
-            if key == "changes":  # Verlaufs-Einträge nicht überschreiben
-                continue
-            for row in rows:
-                if row["user"] == user:
-                    row["status"] = text
-        if self.current_tab != "changes" and self.tree.exists(user):
-            self.tree.set(user, "status", text)
-
-    def _update_stats(self):
-        self.stat_values["followers"].configure(text=str(len(self.followers)))
-        self.stat_values["following"].configure(text=str(len(self.following)))
-        self.stat_values["fans"].configure(
-            text=str(len(self.followers - self.following))
-        )
-        self.stat_values["unfollower"].configure(
-            text=str(len(self.following - self.followers))
-        )
-
-    def _selected_unfollowable(self):
-        """Ausgewählte Nutzer, denen aktuell noch gefolgt wird."""
-        return [u for u in self.tree.selection() if u in self.following]
-
-    def _compute_candidates(self):
-        """Nicht-Zurückfolgende ohne bereits Entfolgte und ohne Whitelist."""
-        return [
-            r["user"]
-            for r in self.rows["unfollower"]
-            if r["status"] != tr("✓ Entfolgt") and r["user"] not in self.whitelist
-        ]
-
-    def _update_unfollow_buttons(self):
-        n = len(self.unfollow_candidates)
-        bulk = tr("🚫 Alle Nicht-Folgenden")
-        self.unfollow_button.configure(
-            text=f"{bulk} ({n})" if n else bulk,
-            state="normal" if n and not self._busy else "disabled",
-        )
-        m = len(self._selected_unfollowable())
-        selected = tr("Auswahl entfolgen")
-        self.unfollow_selected_button.configure(
-            text=f"{selected} ({m})" if m else selected,
-            state="normal" if m and not self._busy else "disabled",
-        )
-        if self.last_unfollowed:
-            self.undo_button.configure(
-                text=f"{tr('↩ Rückgängig')} ({len(self.last_unfollowed)})",
-                state="disabled" if self._busy else "normal",
-            )
-
-    def _show_undo_button(self):
-        self.undo_button.pack(
-            side="right", padx=(0, 8), after=self.unfollow_selected_button
-        )
-
-    def _hide_undo_button(self):
-        self.last_unfollowed = []
-        self.undo_button.pack_forget()
-
-    def _mark_unfollowed(self, user):
-        self.following.discard(user)
-        for rows in self.rows.values():
-            for row in rows:
-                if row["user"] == user:
-                    row["you_follow"] = False
-        if self.tree.exists(user):
-            self.tree.set(user, "you_follow", "–")
-
-    def _mark_followed(self, user):
-        self.following.add(user)
-        for rows in self.rows.values():
-            for row in rows:
-                if row["user"] == user:
-                    row["you_follow"] = True
-        if self.tree.exists(user):
-            self.tree.set(user, "you_follow", "✓")
-
-    def _set_protected(self, users, protect):
-        if protect:
-            self.whitelist.update(users)
-        else:
-            self.whitelist.difference_update(users)
-        self.settings["whitelist"] = sorted(self.whitelist)
-        _save_settings(self.settings)
-        self.unfollow_candidates = self._compute_candidates()
-        self._populate_tree()
-
-    # ------------------------------------------------- Profil-Detailpanel
-
-    def _on_selection_change(self):
-        self._update_unfollow_buttons()
-        self._schedule_detail_update()
-
-    def _schedule_detail_update(self):
-        if self._detail_after is not None:
-            self.after_cancel(self._detail_after)
-            self._detail_after = None
-        selection = self.tree.selection()
-        usable = (
-            len(selection) == 1
-            and self.client is not None
-            and hasattr(self.client, "get_user")
-            and not self._busy
-        )
-        if not usable:
-            self.detail_frame.grid_remove()
-            return
-        user = selection[0]
-        if user in self._profile_cache:
-            self._show_detail(user)
-        else:
-            self._detail_after = self.after(350, lambda: self._start_profile_fetch(user))
-
-    def _start_profile_fetch(self, user):
-        self._detail_after = None
-        threading.Thread(target=self._profile_worker, args=(user,), daemon=True).start()
-
-    def _profile_worker(self, user):
-        try:
-            data = self.client.get_user(user)
-            avatar = None
-            url = data.get("avatar_url")
-            if url:
-                response = self.client.session.get(url, params={"s": 96}, timeout=10)
-                if response.status_code == 200:
-                    avatar = response.content
-        except Exception:
-            return  # Panel ist reiner Komfort – Fehler still ignorieren
-        self._ui(self._store_profile, user, data, avatar)
-
-    def _store_profile(self, user, data, avatar_bytes):
-        image = None
-        if avatar_bytes:
-            try:
-                pil = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-                image = ctk.CTkImage(light_image=pil, dark_image=pil, size=(36, 36))
-            except Exception:
-                image = None
-        self._profile_cache[user] = (data, image)
-        selection = self.tree.selection()
-        if len(selection) == 1 and selection[0] == user:
-            self._show_detail(user)
-
-    def _show_detail(self, user):
-        data, image = self._profile_cache[user]
-        name = data.get("name") or user
-        parts = [name if name == user else f"{name} (@{user})"]
-        parts.append(f"{data.get('followers', '?')} {tr('Follower')}")
-        parts.append(f"{data.get('following', '?')} {tr('Following')}")
-        created = str(data.get("created_at", ""))[:4]
-        if created:
-            parts.append(f"{tr('dabei seit')} {created}")
-        lines = ["  ·  ".join(parts)]
-        bio = (data.get("bio") or "").strip().replace("\n", " ")
-        if bio:
-            if len(bio) > 110:
-                bio = bio[:110] + "…"
-            lines.append(bio)
-        self.detail_text.configure(text="\n".join(lines))
-        self.detail_avatar.configure(image=image, text="" if image else "👤")
-        self.detail_frame.grid(row=2, column=0, sticky="ew", pady=(12, 0))
-
-    # ------------------------------------------------------- Sparkline
-
-    def _draw_sparkline(self):
-        counts = self._spark_counts[-30:]
-        if len(counts) < 2:
-            self.spark_canvas.pack_forget()
-            return
-        dark = ctk.get_appearance_mode() == "Dark"
-        self.spark_canvas.configure(bg="#2b2b2b" if dark else "#dbdbdb")
-        line = "#4d9de0" if dark else "#1f538d"
-        self.spark_canvas.delete("all")
-        w, h, pad = 250, 36, 5
-        lo, hi = min(counts), max(counts)
-        span = (hi - lo) or 1
-        points = []
-        for i, value in enumerate(counts):
-            x = pad + i * (w - 2 * pad) / (len(counts) - 1)
-            y = h - pad - (value - lo) * (h - 2 * pad) / span
-            points.extend((x, y))
-        self.spark_canvas.create_line(*points, fill=line, width=2)
-        x, y = points[-2], points[-1]
-        self.spark_canvas.create_oval(x - 3, y - 3, x + 3, y + 3, fill=line, outline="")
-        self.spark_canvas.pack(fill="x", padx=20, pady=(6, 0))
-
-    # ---------------------------------------------------- Kontextmenü
-
-    def _show_context_menu(self, event):
-        if self._busy:
-            return
-        row = self.tree.identify_row(event.y)
-        if row and row not in self.tree.selection():
-            self.tree.selection_set(row)
-        selection = list(self.tree.selection())
-        if not selection:
-            return
-
-        to_unfollow = [u for u in selection if u in self.following]
-        to_follow = [u for u in selection if u not in self.following]
-        unprotected = [u for u in selection if u not in self.whitelist]
-        protected = [u for u in selection if u in self.whitelist]
-
-        menu = Menu(self, tearoff=0)
-        menu.add_command(
-            label=tr("Profil im Browser öffnen")
-            if len(selection) == 1
-            else tr("{n} Profile im Browser öffnen").format(n=min(len(selection), 5)),
-            command=lambda: self._open_profiles(selection),
-        )
-        if (to_follow and self.client) or to_unfollow:
-            menu.add_separator()
-        if to_follow and self.client:
-            menu.add_command(
-                label=tr("➕ Folgen ({n})").format(n=len(to_follow)),
-                command=lambda: self._start_follow(to_follow),
-            )
-        if to_unfollow:
-            menu.add_command(
-                label=tr("🚫 Entfolgen ({n})").format(n=len(to_unfollow)),
-                command=lambda: self._confirm_and_unfollow(
-                    to_unfollow, self._selection_question(to_unfollow)
-                ),
-            )
-        menu.add_separator()
-        if unprotected:
-            menu.add_command(
-                label=tr("🛡 Schützen ({n})").format(n=len(unprotected)),
-                command=lambda: self._set_protected(unprotected, True),
-            )
-        if protected:
-            menu.add_command(
-                label=tr("Schutz aufheben ({n})").format(n=len(protected)),
-                command=lambda: self._set_protected(protected, False),
-            )
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
-
-    def _on_double_click(self, event):
-        row = self.tree.identify_row(event.y)
-        if row:
-            self._open_profiles([row])
-
-    @staticmethod
-    def _open_profiles(users):
-        for user in users[:5]:
-            webbrowser.open(f"https://github.com/{user}")
-
     # ------------------------------------------------------- Interaktion
 
-    def _detect_ui_scale(self) -> float:
-        """Ermittelt die Display-Skalierung (Xft-DPI, GDK_SCALE, GNOME-Textskalierung)."""
-        scale = 1.0
-        try:
-            scale = max(scale, self.winfo_fpixels("1i") / 96.0)
-        except Exception:
-            pass
-        try:
-            scale = max(scale, float(os.environ.get("GDK_SCALE", "1")))
-        except ValueError:
-            pass
-        try:
-            result = subprocess.run(
-                ["gsettings", "get", "org.gnome.desktop.interface", "text-scaling-factor"],
-                capture_output=True, text=True, timeout=2,
+    def on_analyze(self, e=None):
+        username = (self.username_field.value or "").strip()
+        token = (self.token_field.value or "").strip()
+        if not username or not token:
+            self._alert(tr("Eingabe fehlt"), tr("Bitte gib Username und Token ein."))
+            return
+        self.controller.start_analysis(username, token)
+
+    def on_appearance(self, e):
+        choice = e.control.value
+        self.settings["appearance"] = choice
+        _save_settings(self.settings)
+        self.mode = self._resolve_mode(choice)
+        self._rebuild()
+
+    def on_zoom(self, e):
+        self.scale = int(str(e.control.value).rstrip(" %")) / 100
+        self.settings["zoom"] = self.scale
+        _save_settings(self.settings)
+        self._rebuild()
+
+    def on_language(self, e):
+        self.settings["language"] = {"DE": "de", "EN": "en"}.get(e.control.value, "auto")
+        _save_settings(self.settings)
+        self.status(tr("Sprache geändert – bitte starte die App neu."))
+
+    def on_export(self, e=None):
+        pass  # Task 7
+
+    # ------------------------------------------------------------ Dialoge
+
+    def _alert(self, title, message):
+        if self.page is None:
+            return
+        self.page.show_dialog(
+            ft.AlertDialog(
+                title=ft.Text(title),
+                content=ft.Text(message),
+                bgcolor=self.c["card"],
+                actions=[
+                    ft.TextButton(
+                        content="OK", on_click=lambda e: self.page.pop_dialog()
+                    )
+                ],
             )
-            scale = max(scale, float(result.stdout.strip()))
-        except (OSError, ValueError, subprocess.TimeoutExpired):
-            pass
-        return min(ZOOM_STEPS, key=lambda step: abs(step - scale))
+        )
 
-    def _toggle_token_visibility(self):
-        self.token_entry.configure(show="" if self.show_token.get() else "•")
+    def _confirm(self, title, question, action_label, on_confirm):
+        if self.page is None:
+            return
 
-    def _change_appearance(self, mode):
-        ctk.set_appearance_mode(mode)
-        self._style_treeview()
-        self.settings["appearance"] = mode
-        _save_settings(self.settings)
+        def confirmed(e):
+            self.page.pop_dialog()
+            on_confirm()
 
-    def _apply_minsize(self):
-        # CTk multipliziert minsize mit der Window-Skalierung – zurückrechnen,
-        # damit die physische Mindestgröße auf kleinen Displays nutzbar bleibt
-        self.minsize(int(940 / self.ui_scale), int(560 / self.ui_scale))
+        self.page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                bgcolor=self.c["card"],
+                title=ft.Text(title),
+                content=ft.Text(question),
+                actions=[
+                    ft.TextButton(
+                        content=tr("Abbrechen"),
+                        on_click=lambda e: self.page.pop_dialog(),
+                    ),
+                    ft.FilledButton(
+                        content=ft.Text(action_label, color="#ffffff"),
+                        style=ft.ButtonStyle(bgcolor=self.c["red_btn"]),
+                        on_click=confirmed,
+                    ),
+                ],
+            )
+        )
 
-    def _change_zoom(self, choice):
-        self.ui_scale = int(choice.rstrip(" %")) / 100
-        ctk.set_widget_scaling(self.ui_scale)
-        ctk.set_window_scaling(self.ui_scale)
-        self._apply_minsize()
-        self._style_treeview()
-        self.settings["zoom"] = self.ui_scale
-        _save_settings(self.settings)
+    # ------------------------------------------- Controller-Rückmeldungen
 
-    def _ui(self, fn, *args, **kwargs):
-        """Führt einen UI-Update-Aufruf threadsicher im Mainloop aus."""
-        self.after(0, lambda: fn(*args, **kwargs))
+    def status(self, text):
+        self.status_text.value = text
+        self._update()
 
-    def _set_busy(self, busy, status=None, mode="indeterminate"):
-        self._busy = busy
-        state = "disabled" if busy else "normal"
-        self.analyze_button.configure(state=state)
-        self.export_button.configure(state=state)
-        if busy:
-            self.progress.configure(mode=mode)
-            if mode == "indeterminate":
-                self.progress.start()
-            else:
-                self.progress.stop()
-                self.progress.set(0)
+    def busy_changed(self, busy, determinate):
+        self.analyze_button.disabled = busy
+        self.export_button.disabled = busy
+        if busy and not determinate:
+            self.progress_bar.value = None  # None = unbestimmte Animation
         else:
-            self.progress.stop()
-            self.progress.configure(mode="determinate")
-            self.progress.set(0)
-        self._update_unfollow_buttons()
-        if status is not None:
-            self.status_label.configure(text=status)
+            self.progress_bar.value = 0
+        self.refresh_buttons()
+        self._update()
 
-    def _fail(self, message):
-        self._set_busy(False, message)
-        messagebox.showerror(tr("Fehler"), message)
+    def progress(self, fraction):
+        self.progress_bar.value = fraction
+        self._update()
 
-    def _show_rate_limit_message(self, err: RateLimitError):
+    def data_changed(self):
+        self.refresh_stats()
+        self.refresh_list()
+        self.refresh_buttons()
+        self.refresh_rate()
+        self._update()
+
+    def row_changed(self, user):
+        refs = self._row_refs.get(user)
+        if refs:
+            row = next(
+                (
+                    r
+                    for r in self.controller.rows[self.current_tab]
+                    if r["user"] == user
+                ),
+                None,
+            )
+            if row is not None:
+                refs["status"].value = row["status"]
+                refs["you_follow"].content = self._check_mark(row["you_follow"])
+        self.refresh_buttons()
+        self._update()
+
+    def analysis_finished(self):
+        self.current_tab = "unfollower"
+        self.selection.clear()
+        self._profile_cache.clear()
+        self.refresh_tabs()
+        self.refresh_sparkline()
+        self.data_changed()
+
+    def delta_changed(self, text):
+        self._last_delta = text
+        self.delta_text.value = text
+        self._update()
+
+    def undo_changed(self, count):
+        self.refresh_buttons()
+        self._update()
+
+    def error(self, message):
+        self._alert(tr("Fehler"), message)
+
+    def rate_limited(self, err):
         if err.reset_time:
             text = tr(
                 "Das GitHub-API-Limit ist erreicht.\n\n"
@@ -1069,411 +625,63 @@ class FollowerCheckerApp(ctk.CTk):
                 "Das GitHub-API-Limit ist erreicht.\n\n"
                 "Bitte warte einige Minuten und versuche es erneut."
             )
-        messagebox.showwarning(tr("GitHub-Rate-Limit"), text)
+        self._alert(tr("GitHub-Rate-Limit"), text)
 
-    def _handle_rate_limit(self, err: RateLimitError):
-        self._set_busy(
-            False, tr("GitHub-Rate-Limit erreicht – bitte später erneut versuchen.")
+    # ------------------------------------------------------------ Refresh
+
+    def _check_mark(self, flag: bool) -> ft.Control:
+        # Task 5 nutzt das in den Zeilen; hier definiert, damit row_changed läuft
+        if flag:
+            return ft.Text(
+                "✓", size=self.s(13), color=self.c["green"], weight=ft.FontWeight.BOLD
+            )
+        return ft.Text("–", size=self.s(13), color=self.c["muted"])
+
+    def refresh_stats(self):
+        analysed = bool(
+            self.controller.followers
+            or self.controller.following
+            or self.controller.client
         )
-        self._show_rate_limit_message(err)
+        for key, value in self.controller.stats().items():
+            self.stat_values[key].value = str(value) if analysed else "–"
 
-    # ----------------------------------------------------------- Analyse
+    def refresh_rate(self):
+        client = self.controller.client
+        remaining = getattr(client, "rate_remaining", None)
+        limit = getattr(client, "rate_limit", None)
+        if remaining is not None and limit:
+            self.rate_text.value = f"{tr('API-Limit')}: {remaining}/{limit}"
 
-    def start_analysis(self):
-        username = self.username_entry.get().strip()
-        token = self.token_entry.get().strip()
-        if not username or not token:
-            messagebox.showerror(
-                tr("Eingabe fehlt"), tr("Bitte gib Username und Token ein.")
-            )
-            return
-        self._pending_token = token
-        self._set_busy(True, tr("Validiere Zugangsdaten…"))
-        threading.Thread(
-            target=self._analysis_worker, args=(username, token), daemon=True
-        ).start()
+    def refresh_tabs(self):
+        pass  # Task 5
 
-    def _analysis_worker(self, username, token):
-        try:
-            client = GitHubClient(username, token)
-            client.validate_credentials()
+    def refresh_list(self):
+        pass  # Task 5
 
-            self._ui(self.status_label.configure, text=tr("Lade Follower…"))
-            followers = client.fetch_all_users(
-                f"users/{username}/followers",
-                on_page=lambda p: self._ui(
-                    self.status_label.configure,
-                    text=tr("Lade Follower… (Seite {page})").format(page=p),
-                ),
-            )
+    def refresh_buttons(self):
+        pass  # Task 6
 
-            self._ui(self.status_label.configure, text=tr("Lade Following…"))
-            following = client.fetch_all_users(
-                f"users/{username}/following",
-                on_page=lambda p: self._ui(
-                    self.status_label.configure,
-                    text=tr("Lade Following… (Seite {page})").format(page=p),
-                ),
-            )
+    def refresh_sparkline(self):
+        pass  # Task 7
 
-            self.client = client
-            self._ui(self._apply_results, followers, following)
+    def refresh_all(self):
+        self.refresh_tabs()
+        self.refresh_stats()
+        self.refresh_list()
+        self.refresh_buttons()
+        self.refresh_rate()
+        self.refresh_sparkline()
+        self._update()
 
-        except RateLimitError as err:
-            self._ui(self._handle_rate_limit, err)
-        except AuthError:
-            self._ui(
-                self._fail,
-                tr("Token ungültig oder abgelaufen. Prüfe auch den Scope „user:follow“."),
-            )
-        except requests.HTTPError as err:
-            code = err.response.status_code if err.response is not None else "?"
-            hint = tr(" Existiert der Username?") if code == 404 else ""
-            self._ui(
-                self._fail,
-                tr("GitHub-API-Fehler (HTTP {code}).{hint}").format(code=code, hint=hint),
-            )
-        except requests.RequestException:
-            self._ui(
-                self._fail,
-                tr("Keine Verbindung zur GitHub-API. Prüfe deine Internetverbindung."),
-            )
 
-    def _rebuild_changes_rows(self, entries):
-        """Baut den Verlauf-Tab aus den gespeicherten Analyse-Ständen.
-
-        Pro Nutzer bleibt das jeweils letzte Ereignis stehen (eindeutige
-        Zeilen-IDs), sortiert wird über den ISO-Zeitstempel in "sort".
-        """
-        events = {}
-        for prev, curr in zip(entries[:-1], entries[1:]):
-            stamp = str(curr.get("timestamp", ""))
-            try:
-                when = datetime.fromisoformat(stamp).strftime("%d.%m.%Y")
-            except ValueError:
-                when = tr("unbekannt")
-            gained, lost = compute_follower_delta(
-                set(prev.get("followers", [])), set(curr.get("followers", []))
-            )
-            for user in gained:
-                events[user] = (stamp, tr("+ folgt dir seit {when}").format(when=when))
-            for user in lost:
-                events[user] = (stamp, tr("− entfolgte dich am {when}").format(when=when))
-        self.rows["changes"] = [
-            {
-                "user": user,
-                "follows_you": user in self.followers,
-                "you_follow": user in self.following,
-                "status": text,
-                "sort": stamp,
-            }
-            for user, (stamp, text) in events.items()
-        ]
-
-    def _update_history(self):
-        """Speichert den Analyse-Stand und liefert den Vergleichstext."""
-        history = _load_history()
-        entries = _normalize_history_entries(history.get(self.client.username))
-        entries.append({
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "followers": sorted(self.followers),
-            "following": sorted(self.following),
-        })
-        entries = entries[-HISTORY_LIMIT:]
-        history[self.client.username] = entries
-        _save_history(history)
-
-        self._spark_counts = [len(e.get("followers", [])) for e in entries]
-        self._draw_sparkline()
-        self._rebuild_changes_rows(entries)
-
-        if len(entries) < 2:
-            return tr(
-                "Erste Analyse gespeichert – Veränderungen "
-                "siehst du beim nächsten Lauf."
-            )
-        previous = entries[-2]
-        gained, lost = compute_follower_delta(
-            set(previous.get("followers", [])), self.followers
-        )
-        try:
-            when = datetime.fromisoformat(previous["timestamp"]).strftime(
-                "%d.%m.%Y, %H:%M"
-            )
-        except (KeyError, ValueError):
-            when = tr("letzter Analyse")
-        if not gained and not lost:
-            return tr("Keine Follower-Veränderung seit {when}.").format(when=when)
-
-        def fmt(users):
-            names = ", ".join(users[:5])
-            if len(users) > 5:
-                names += f" … (+{len(users) - 5})"
-            return names
-
-        lines = [tr("Seit {when}:").format(when=when)]
-        if gained:
-            lines.append(
-                tr("+{n} Follower: {names}").format(n=len(gained), names=fmt(gained))
-            )
-        if lost:
-            lines.append(
-                tr("−{n} Follower: {names}").format(n=len(lost), names=fmt(lost))
-            )
-        return "\n".join(lines)
-
-    def _apply_results(self, followers, following):
-        self.followers = followers
-        self.following = following
-        self._rebuild_rows()
-        self._hide_undo_button()
-        self._profile_cache.clear()
-        self.unfollow_candidates = self._compute_candidates()
-        self._update_stats()
-        if self.client:
-            self.delta_label.configure(text=self._update_history())
-            self._update_rate_label()
-            if self._pending_token:
-                self._persist_credentials(self.client.username, self._pending_token)
-                self._pending_token = None
-
-        self.segment.set(TAB_LABELS["unfollower"])
-        self.current_tab = "unfollower"
-        self._populate_tree()
-
-        n = len(self.unfollow_candidates)
-        if n:
-            status = tr("Analyse abgeschlossen: {n} Nutzer folgen dir nicht zurück.").format(n=n)
-        else:
-            status = tr("Analyse abgeschlossen: Alle folgen dir zurück. 🎉")
-        self._set_busy(False, status)
-
-    # --------------------------------------------------------- Entfolgen
-
-    def confirm_unfollow(self):
-        users = list(self.unfollow_candidates)
-        if len(users) == 1:
-            question = tr("Wirklich „{user}“ entfolgen (folgt dir nicht zurück)?").format(
-                user=users[0]
-            )
-        else:
-            question = tr(
-                "Wirklich allen {n} Nutzern entfolgen, die dir nicht zurückfolgen?"
-            ).format(n=len(users))
-        protected = [
-            r["user"]
-            for r in self.rows["unfollower"]
-            if r["user"] in self.whitelist and r["status"] != tr("✓ Entfolgt")
-        ]
-        if protected:
-            question += tr(
-                "\n\n🛡 {n} geschützte Nutzer werden übersprungen."
-            ).format(n=len(protected))
-        self._confirm_and_unfollow(users, question)
-
-    @staticmethod
-    def _selection_question(users):
-        if len(users) == 1:
-            return tr("Wirklich „{user}“ entfolgen?").format(user=users[0])
-        shown = ", ".join(users[:8])
-        if len(users) > 8:
-            shown += tr(" … und {n} weitere").format(n=len(users) - 8)
-        return tr("Wirklich {n} ausgewählten Nutzern entfolgen?\n\n{shown}").format(
-            n=len(users), shown=shown
-        )
-
-    def confirm_unfollow_selection(self):
-        users = self._selected_unfollowable()
-        if not users:
-            messagebox.showinfo(
-                tr("Keine Auswahl"),
-                tr("Markiere in der Tabelle Nutzer, denen du aktuell folgst."),
-            )
-            return
-        self._confirm_and_unfollow(users, self._selection_question(users))
-
-    def _confirm_and_unfollow(self, users, question):
-        if not users:
-            messagebox.showinfo(
-                tr("Nichts zu tun"), tr("Es gibt keine Nutzer zum Entfolgen.")
-            )
-            return
-        if not self.client:
-            messagebox.showinfo(tr("Keine Analyse"), tr("Starte zuerst eine Analyse."))
-            return
-        if not messagebox.askyesno(
-            tr("Entfolgen bestätigen"),
-            question + tr("\n\nDiese Aktion kann nicht rückgängig gemacht werden."),
-        ):
-            return
-        self._set_busy(True, tr("Entfolge Nutzer…"), mode="determinate")
-        threading.Thread(
-            target=self._unfollow_worker, args=(list(users),), daemon=True
-        ).start()
-
-    def _unfollow_worker(self, users):
-        succeeded = []
-        failed = 0
-        total = len(users)
-        rate_limited = None
-
-        for idx, user in enumerate(users, 1):
-            try:
-                ok, status_text = self.client.unfollow(user)
-            except RateLimitError as err:
-                rate_limited = err
-                for skipped in users[idx - 1:]:
-                    self._ui(
-                        self._set_row_status, skipped, tr("Übersprungen (Rate-Limit)")
-                    )
-                break
-            except requests.RequestException:
-                ok, status_text = False, tr("Netzwerkfehler")
-
-            if ok:
-                succeeded.append(user)
-                self._ui(self._mark_unfollowed, user)
-            else:
-                failed += 1
-
-            self._ui(self._set_row_status, user, status_text)
-            self._ui(self.progress.set, idx / total)
-            self._ui(
-                self.status_label.configure,
-                text=tr("Entfolge Nutzer… {idx}/{total}").format(idx=idx, total=total),
-            )
-            time.sleep(ACTION_DELAY)
-
-        self._ui(self._finish_unfollow, succeeded, failed, rate_limited)
-
-    def _finish_unfollow(self, succeeded, failed, rate_limited):
-        self.unfollow_candidates = self._compute_candidates()
-        self._update_stats()
-        self._update_rate_label()
-        if succeeded:
-            self.last_unfollowed = list(succeeded)
-            self._show_undo_button()
-
-        parts = [tr("{n} entfolgt").format(n=len(succeeded))]
-        if failed:
-            parts.append(tr("{n} fehlgeschlagen").format(n=failed))
-        self._set_busy(False, tr("Fertig: ") + ", ".join(parts) + ".")
-
-        if rate_limited:
-            self._show_rate_limit_message(rate_limited)
-
-    # ----------------------------------------------------------- Folgen
-
-    def undo_unfollow(self):
-        self._start_follow(list(self.last_unfollowed), is_undo=True)
-
-    def _start_follow(self, users, is_undo=False):
-        if not users or not self.client:
-            return
-        self._set_busy(True, tr("Folge Nutzern…"), mode="determinate")
-        threading.Thread(
-            target=self._follow_worker, args=(list(users), is_undo), daemon=True
-        ).start()
-
-    def _follow_worker(self, users, is_undo):
-        succeeded = []
-        failed = 0
-        total = len(users)
-        rate_limited = None
-
-        for idx, user in enumerate(users, 1):
-            try:
-                ok, status_text = self.client.follow(user)
-            except RateLimitError as err:
-                rate_limited = err
-                for skipped in users[idx - 1:]:
-                    self._ui(
-                        self._set_row_status, skipped, tr("Übersprungen (Rate-Limit)")
-                    )
-                break
-            except requests.RequestException:
-                ok, status_text = False, tr("Netzwerkfehler")
-
-            if ok:
-                succeeded.append(user)
-                self._ui(self._mark_followed, user)
-            else:
-                failed += 1
-
-            self._ui(self._set_row_status, user, status_text)
-            self._ui(self.progress.set, idx / total)
-            self._ui(
-                self.status_label.configure,
-                text=tr("Folge Nutzern… {idx}/{total}").format(idx=idx, total=total),
-            )
-            time.sleep(ACTION_DELAY)
-
-        self._ui(self._finish_follow, succeeded, failed, rate_limited, is_undo)
-
-    def _finish_follow(self, succeeded, failed, rate_limited, is_undo):
-        if is_undo and succeeded:
-            self._hide_undo_button()
-        self.unfollow_candidates = self._compute_candidates()
-        self._update_stats()
-        self._update_rate_label()
-
-        parts = [tr("{n} gefolgt").format(n=len(succeeded))]
-        if failed:
-            parts.append(tr("{n} fehlgeschlagen").format(n=failed))
-        self._set_busy(False, tr("Fertig: ") + ", ".join(parts) + ".")
-
-        if rate_limited:
-            self._show_rate_limit_message(rate_limited)
-
-    # ------------------------------------------------------------- Export
-
-    def export_csv(self):
-        rows = self._visible_rows()
-        if not rows:
-            messagebox.showinfo(
-                tr("Keine Daten"),
-                tr("Starte zuerst eine Analyse – es gibt noch nichts zu exportieren."),
-            )
-            return
-
-        default_name = f"github_{self.current_tab}_{datetime.now():%Y-%m-%d}.csv"
-        path = filedialog.asksaveasfilename(
-            title=tr("Ergebnis als CSV speichern"),
-            defaultextension=".csv",
-            initialfile=default_name,
-            filetypes=[(tr("CSV-Datei"), "*.csv"), (tr("Alle Dateien"), "*.*")],
-        )
-        if not path:
-            return
-
-        try:
-            with open(path, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f)
-                writer.writerow(
-                    ["username", tr("folgt_dir"), tr("du_folgst"), "status"]
-                )
-                for row in rows:
-                    writer.writerow([
-                        row["user"],
-                        tr("ja") if row["follows_you"] else tr("nein"),
-                        tr("ja") if row["you_follow"] else tr("nein"),
-                        row["status"],
-                    ])
-        except OSError as err:
-            messagebox.showerror(
-                tr("Export fehlgeschlagen"),
-                tr("Datei konnte nicht gespeichert werden: {err}").format(err=err),
-            )
-            return
-
-        self.status_label.configure(
-            text=tr("CSV gespeichert: {path}").format(path=path)
-        )
+def _page_main(page: ft.Page):
+    view = FollowerCheckerView()
+    view.mount(page)
 
 
 def main():
-    app = FollowerCheckerApp()
-    app.mainloop()
+    ft.run(_page_main)
 
 
 if __name__ == "__main__":

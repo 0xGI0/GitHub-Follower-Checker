@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Tests für den GitHub Follower Checker.
 
-Die Logik-Tests laufen headless. Der GUI-Test benötigt ein Display –
-lokal reicht DISPLAY=:0, in der CI läuft er unter xvfb-run.
+Alle Tests – inklusive der Flet-View-Tests – laufen headless, ohne
+Display-Abhängigkeit.
 """
 import importlib.util
 import json
@@ -28,17 +28,7 @@ def core():
 
 
 @pytest.fixture(scope="session")
-def gui(core):
-    spec = importlib.util.spec_from_file_location(
-        "gui_under_test", REPO / "GitHubFollowerCheckerGUI.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-@pytest.fixture(scope="session")
-def cli(gui):
+def cli(core):
     sys.path.insert(0, str(REPO))
     import GitHubFollowerCheckerCLI
 
@@ -255,132 +245,6 @@ def test_cli_requires_token(cli, monkeypatch, capsys):
     rc = cli.main(["demo"], client_factory=CLIFakeClient)
     assert rc == 2
     assert "Kein Token" in capsys.readouterr().err
-
-
-# ------------------------------------------------------------- GUI-Smoke
-
-
-class FakeClient:
-    username = "demo-user"
-
-    def unfollow(self, user):
-        return True, "✓ Entfolgt"
-
-    def follow(self, user):
-        return True, "✓ Gefolgt"
-
-
-class ImmediateThread:
-    """Thread-Ersatz: führt das Target synchron im Main-Thread aus.
-
-    Ohne laufenden mainloop() darf kein Nebenthread after() aufrufen –
-    synchron ausgeführt landen alle _ui-Aufrufe in der after-Queue des
-    Main-Threads und werden per app.update() abgearbeitet.
-    """
-
-    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
-        self._target = target
-        self._args = args
-        self._kwargs = kwargs or {}
-
-    def start(self):
-        self._target(*self._args, **self._kwargs)
-
-
-@pytest.mark.skipif(
-    not os.environ.get("DISPLAY"),
-    reason="Benötigt ein Display (lokal DISPLAY setzen, CI nutzt xvfb-run)",
-)
-def test_gui_end_to_end(gui, core, tmp_path, monkeypatch):
-    monkeypatch.setattr(gui, "_load_settings", lambda: {"zoom": 1.0, "appearance": "Dark"})
-    monkeypatch.setattr(gui, "_save_settings", lambda settings: None)
-    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
-    monkeypatch.setattr(gui, "ACTION_DELAY", 0.01)
-    monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **k: True)
-    monkeypatch.setattr(gui.messagebox, "showinfo", lambda *a, **k: None)
-    monkeypatch.setattr(gui.messagebox, "showwarning", lambda *a, **k: None)
-    monkeypatch.setattr(gui.messagebox, "showerror", lambda *a, **k: None)
-    monkeypatch.setattr(gui.threading, "Thread", ImmediateThread)
-
-    app = gui.FollowerCheckerApp()
-    try:
-        app.update()
-        app.client = FakeClient()
-        app._apply_results(
-            {"alice", "bob", "carol", "dave"}, {"bob", "carol", "erin", "frank"}
-        )
-        app.update()
-
-        # Statistiken inkl. neuem Fans-Wert
-        assert app.stat_values["followers"].cget("text") == "4"
-        assert app.stat_values["fans"].cget("text") == "2"
-        assert sorted(app.rows["fans"], key=lambda r: r["user"])[0]["user"] == "alice"
-
-        # Verlauf: erste Analyse angekündigt, Datei geschrieben
-        assert "Erste Analyse" in app.delta_label.cget("text")
-        assert "demo-user" in core._load_history()
-
-        # Zweite Analyse: Delta wird angezeigt
-        app._apply_results(
-            {"alice", "bob", "carol", "neu-nutzer"}, {"bob", "carol", "erin", "frank"}
-        )
-        app.update()
-        assert "+1 Follower: neu-nutzer" in app.delta_label.cget("text")
-        assert "−1 Follower: dave" in app.delta_label.cget("text")
-
-        # Verlauf-Tab und Sparkline speisen sich aus der Historie
-        assert any(
-            r["user"] == "dave" and "entfolgte dich" in r["status"]
-            for r in app.rows["changes"]
-        )
-        assert any(
-            r["user"] == "neu-nutzer" and "folgt dir seit" in r["status"]
-            for r in app.rows["changes"]
-        )
-        assert app._spark_counts == [4, 4]
-        assert app.spark_canvas.winfo_manager() == "pack"
-
-        # Suche filtert die Tabelle
-        app.segment.set("Following")
-        app._on_tab_change("Following")
-        app.search_entry.insert(0, "bo")
-        app._populate_tree()
-        assert list(app.tree.get_children()) == ["bob"]
-        app.search_entry.delete(0, "end")
-        app._populate_tree()
-        assert len(app.tree.get_children()) == 4
-
-        # Whitelist schützt vor dem Bulk-Entfolgen
-        app._set_protected(["erin"], True)
-        assert app.unfollow_candidates == ["frank"]
-        assert app.tree.set("erin", "user").startswith("🛡 ")
-        app._set_protected(["erin"], False)
-        assert sorted(app.unfollow_candidates) == ["erin", "frank"]
-
-        # Auswahl entfolgen (zwei Mutuals)
-        app.tree.selection_set(["bob", "carol"])
-        app.update()
-        assert "(2)" in app.unfollow_selected_button.cget("text")
-        app.confirm_unfollow_selection()
-        app.update()
-        assert "Fertig: 2 entfolgt." in app.status_label.cget("text")
-        assert "bob" not in app.following
-        assert app.tree.set("bob", "status") == "✓ Entfolgt"
-        assert app.tree.set("bob", "you_follow") == "–"
-        assert app.undo_button.winfo_manager() == "pack"
-        assert "(2)" in app.undo_button.cget("text")
-
-        # Rückgängig folgt beiden wieder
-        app.undo_unfollow()
-        app.update()
-        assert "Fertig: 2 gefolgt." in app.status_label.cget("text")
-        assert {"bob", "carol"} <= app.following
-        assert app.tree.set("bob", "status") == "✓ Gefolgt"
-        assert app.tree.set("bob", "you_follow") == "✓"
-        app.update()
-        assert app.undo_button.winfo_manager() == ""
-    finally:
-        app.destroy()
 
 
 # ---------------------------------------------------------- AppController
@@ -616,3 +480,73 @@ def test_controller_questions(controller_mod, monkeypatch):
     assert '„bob“' in single
     many = controller_mod.AppController.selection_question([f"u{i}" for i in range(10)])
     assert "… und 2 weitere" in many
+
+
+# ------------------------------------------------------------ Flet-View
+
+
+@pytest.fixture(scope="session")
+def viewmod(core, controller_mod):
+    spec = importlib.util.spec_from_file_location(
+        "view_under_test", REPO / "GitHubFollowerCheckerGUI.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def make_view(viewmod, monkeypatch):
+    import gfc_controller
+
+    # Beide Module patchen – View UND Controller schreiben sonst echte Settings
+    monkeypatch.setattr(viewmod, "_save_settings", lambda settings: None)
+    monkeypatch.setattr(gfc_controller, "_save_settings", lambda settings: None)
+    return viewmod.FollowerCheckerView(settings={"zoom": 1.0, "appearance": "Dark"})
+
+
+def collect_texts(control, found=None):
+    """Sammelt rekursiv alle ft.Text-Werte eines Control-Baums ein."""
+    found = found if found is not None else []
+    value = getattr(control, "value", None)
+    if isinstance(value, str):
+        found.append(value)
+    for attr in ("content", "controls", "title", "actions", "label", "shapes"):
+        child = getattr(control, attr, None)
+        if child is None:
+            continue
+        for item in child if isinstance(child, list) else [child]:
+            if hasattr(item, "__dataclass_fields__"):
+                collect_texts(item, found)
+    return found
+
+
+def test_view_sidebar_builds(viewmod, monkeypatch):
+    view = make_view(viewmod, monkeypatch)
+    texts = " ".join(collect_texts(view.root))
+    assert "Follower Checker" in texts
+    assert "ZUGANGSDATEN" in texts
+    assert "Analyse starten" in texts
+    assert view.stat_values["followers"].value == "–"
+    assert view.token_field.password is True
+    assert view.c["bg"] == "#0d1117"
+
+
+def test_view_light_palette(viewmod, monkeypatch):
+    monkeypatch.setattr(viewmod, "_save_settings", lambda settings: None)
+    view = viewmod.FollowerCheckerView(settings={"zoom": 1.0, "appearance": "Light"})
+    assert view.mode == "light"
+    assert view.c["bg"] == "#ffffff"
+
+
+def test_view_zoom_scales(viewmod, monkeypatch):
+    monkeypatch.setattr(viewmod, "_save_settings", lambda settings: None)
+    view = viewmod.FollowerCheckerView(settings={"zoom": 1.5, "appearance": "Dark"})
+    assert view.s(100) == 150
+
+
+def test_view_analyze_requires_input(viewmod, monkeypatch):
+    view = make_view(viewmod, monkeypatch)
+    alerts = []
+    monkeypatch.setattr(view, "_alert", lambda title, msg: alerts.append((title, msg)))
+    view.on_analyze()
+    assert alerts and "Eingabe fehlt" in alerts[0][0]
