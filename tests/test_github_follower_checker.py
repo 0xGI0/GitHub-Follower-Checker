@@ -613,6 +613,6 @@ def test_controller_questions(controller_mod, monkeypatch):
     assert users == ["frank"]
     assert "🛡 1 geschützte Nutzer" in question
     single = controller_mod.AppController.selection_question(["bob"])
-    assert '„bob"' in single
+    assert '„bob“' in single
     many = controller_mod.AppController.selection_question([f"u{i}" for i in range(10)])
     assert "… und 2 weitere" in many

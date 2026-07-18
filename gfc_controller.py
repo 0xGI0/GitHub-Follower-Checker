@@ -329,7 +329,7 @@ class AppController:
         users = list(self.unfollow_candidates)
         if len(users) == 1:
             question = tr(
-                'Wirklich „{user}" entfolgen (folgt dir nicht zurück)?'
+                'Wirklich „{user}“ entfolgen (folgt dir nicht zurück)?'
             ).format(user=users[0])
         else:
             question = tr(
@@ -349,7 +349,7 @@ class AppController:
     @staticmethod
     def selection_question(users):
         if len(users) == 1:
-            return tr('Wirklich „{user}" entfolgen?').format(user=users[0])
+            return tr('Wirklich „{user}“ entfolgen?').format(user=users[0])
         shown = ", ".join(users[:8])
         if len(users) > 8:
             shown += tr(" … und {n} weitere").format(n=len(users) - 8)
@@ -397,7 +397,7 @@ class AppController:
             self.ui.rate_limited(err)
         except AuthError:
             self._fail(
-                tr('Token ungültig oder abgelaufen. Prüfe auch den Scope „user:follow".')
+                tr('Token ungültig oder abgelaufen. Prüfe auch den Scope „user:follow“.')
             )
         except requests.HTTPError as err:
             code = err.response.status_code if err.response is not None else "?"
