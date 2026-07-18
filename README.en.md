@@ -25,7 +25,8 @@ one click, or precisely the users you select.
 
 * **Modern GUI** (Flet, GitHub look, dark mode by default, switchable to light)
 * **Bilingual (English/German)**: follows your system language,
-  switchable via the language menu in the bottom-left corner (Auto/DE/EN)
+  switchable via the language menu in the bottom-left corner (Auto/DE/EN) –
+  the switch takes effect immediately, no restart needed
 * **HiDPI-ready**: display scaling is detected automatically, zoom
   (100–200 %) selectable; zoom, theme and window size are stored locally
   (`~/.config/github-follower-checker/`, never credentials)
@@ -35,20 +36,22 @@ one click, or precisely the users you select.
 * **Search box** to filter the table, **CSV export** of the current view
 * **Profile panel**: selecting a user shows their avatar, name, bio and
   follower counts below the table
-* **Secure token entry**: masked input; by default the token is kept in
-  memory only – optionally "remember token" stores it in the
-  **system keyring** (never in a file)
+* **Secure token entry**: masked input, revealable via the eye icon; by
+  default the token is kept in memory only – optionally "remember token"
+  stores it in the **system keyring** (never in a file)
 * **Responsive UI**: all API calls run in a background thread, with live
   progress and a remaining API quota indicator
 * **Unfollow with confirmation** and per-user status:
   + **"Alle Nicht-Folgenden"** unfollows everyone who doesn't follow back
     (🛡-protected users are skipped)
   + **"Auswahl entfolgen"** unfollows only the selected rows
-    (Ctrl/Shift-click for multi-select)
+    (select via the checkbox in each row)
   + **"↩ Rückgängig"** re-follows the users you just unfollowed
-* **Whitelist**: protect users via right-click (🛡) so bulk unfollow skips them
-* **Right-click menu & double-click**: open profile in browser, follow
-  (e.g. follow fans back), unfollow, protect
+* **Whitelist**: protect users via the ⋯ menu on each row (🛡) so bulk
+  unfollow skips them
+* **⋯ menu on each row**: open profile in browser, follow
+  (e.g. follow fans back), unfollow, protect – clicking the username
+  also opens the profile
 * **History**: after each analysis the sidebar shows who followed or
   unfollowed you since the last run, plus a small follower trend chart
   (stored locally, usernames only)
@@ -96,8 +99,8 @@ double-click launching works on Windows, macOS and Linux.
 
 1. Enter your GitHub username and token
 2. Click **"Analyse starten"** – progress is shown live
-3. Review, sort, filter or export the results; right-click a row for
-   actions, double-click to open the profile
+3. Review, sort, filter or export the results; the ⋯ menu on each row
+   opens the action menu, clicking the username opens the profile
 4. Optionally unfollow – in bulk or by selection, always with a
    confirmation dialog, per-user status and an undo button
 
@@ -149,8 +152,8 @@ supports `--version` and `--quiet`.
 ```bash
 pip install -e ".[dev]"
 ruff check .   # lint
-mypy GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py   # types
-pytest         # tests (the GUI test needs a display; CI uses Xvfb)
+mypy gfc_core.py gfc_controller.py GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py   # types
+pytest         # tests (run fully headless, no display/Xvfb needed)
 ```
 
 Every push runs lint, type checks and tests via **GitHub Actions**.

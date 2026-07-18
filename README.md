@@ -26,7 +26,8 @@ gezielt einzelne ausgewählte Nutzer.
 
 * **Moderne GUI** (Flet, GitHub-Look, Dark Mode als Standard, Light Mode umschaltbar)
 * **Zweisprachig (Deutsch/Englisch)**: folgt automatisch der Systemsprache,
-  umstellbar über das Sprachmenü unten links (Auto/DE/EN)
+  umstellbar über das Sprachmenü unten links (Auto/DE/EN) – der Wechsel wirkt
+  sofort, ohne Neustart
 * **HiDPI-tauglich**: Display-Skalierung wird automatisch erkannt,
   Zoom (100–200 %) per Dropdown einstellbar – Zoom und Theme werden lokal
   gespeichert (`~/.config/github-follower-checker/`, keine Zugangsdaten)
@@ -42,7 +43,7 @@ gezielt einzelne ausgewählte Nutzer.
 * **Profil-Panel**: Bei Auswahl eines Nutzers erscheinen Avatar, Name,
   Bio und Follower-Zahlen direkt unter der Tabelle
 * **Sichere Token-Eingabe**
-  + Maskiertes Eingabefeld (einblendbar per Checkbox)
+  + Maskiertes Eingabefeld, per Auge-Symbol kurzzeitig einblendbar
   + Token wird standardmäßig **nicht gespeichert und nicht geloggt** –
     es bleibt nur im Arbeitsspeicher
   + Optional: **„Token merken"** legt das Token verschlüsselt im
@@ -58,18 +59,18 @@ gezielt einzelne ausgewählte Nutzer.
 * **Entfolgen mit Sicherheitsabfrage** und Statusanzeige pro Nutzer
   + **„Alle Nicht-Folgenden"**: entfolgt allen Nutzern, die dir nicht zurückfolgen
   + **„Auswahl entfolgen"**: entfolgt nur den in der Tabelle markierten Nutzern –
-    in jeder Ansicht, Mehrfachauswahl per Strg-/Shift-Klick
+    in jeder Ansicht per Checkbox in der Zeile auswählbar
   + **„↩ Rückgängig"**: folgt den gerade entfolgten Nutzern mit einem Klick wieder
-* **Whitelist**: Nutzer per Rechtsklick **schützen** (🛡) –
+* **Whitelist**: Nutzer über das ⋯-Menü der Zeile **schützen** (🛡) –
   „Alle Nicht-Folgenden" überspringt sie dann
-* **Rechtsklick-Menü & Doppelklick**: Profil im Browser öffnen,
-  folgen (z. B. Fans zurückfolgen), entfolgen oder schützen
+* **⋯-Menü pro Zeile**: Profil im Browser öffnen,
+  folgen (z. B. Fans zurückfolgen), entfolgen oder schützen –
+  ein Klick auf den Nutzernamen öffnet direkt das Profil im Browser
 * **Verlauf**: Die Sidebar zeigt nach jeder Analyse, wer dir seit dem
   letzten Lauf **neu folgt oder entfolgt ist**, plus ein Mini-Diagramm des
   Follower-Trends; der Tab „Verlauf" listet alle Ereignisse
   (lokal gespeichert, nur Nutzernamen)
-* **Fenstergröße wird gemerkt** – inklusive Workaround für Window-Manager,
-  die das Fenster beim Start auf die Mindestgröße stauchen (HiDPI)
+* **Fenstergröße wird gemerkt**
 
 ---
 
@@ -120,13 +121,13 @@ dadurch funktioniert auch der Start per **Doppelklick** (Windows, Mac, Linux).
 2. Personal Access Token einfügen (maskiert, wird nirgends gespeichert)
 3. **„Analyse starten"** klicken – der Fortschritt wird live angezeigt
 4. Ergebnisse in der Tabelle prüfen, bei Bedarf sortieren, filtern oder als
-   **CSV exportieren** – Rechtsklick auf eine Zeile öffnet das Aktionsmenü,
-   Doppelklick öffnet das GitHub-Profil im Browser
+   **CSV exportieren** – das ⋯-Menü an jeder Zeile öffnet das Aktionsmenü,
+   ein Klick auf den Nutzernamen öffnet das GitHub-Profil im Browser
 5. Optional entfolgen – zwei Wege, jeweils mit Bestätigungsdialog und Status pro Nutzer:
    * **„Alle Nicht-Folgenden"** entfolgt allen Nutzern aus der Ansicht
      „Folgen nicht zurück" (🛡-geschützte Nutzer werden übersprungen)
    * **„Auswahl entfolgen"** entfolgt nur den markierten Nutzern – einfach in
-     einer beliebigen Ansicht Zeilen anklicken (Strg-/Shift-Klick für mehrere)
+     einer beliebigen Ansicht die Checkbox der gewünschten Zeilen aktivieren
    * Versehentlich entfolgt? **„↩ Rückgängig"** folgt dem letzten Schwung wieder
 
 ### 💻 CLI-Version
@@ -178,8 +179,8 @@ kennt außerdem `--version` und `--quiet`.
 ```bash
 pip install -e ".[dev]"
 ruff check .   # Lint
-mypy GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py   # Typen
-pytest         # Tests (der GUI-Test benötigt ein Display, CI nutzt Xvfb)
+mypy gfc_core.py gfc_controller.py GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py   # Typen
+pytest         # Tests (laufen komplett headless, kein Display/Xvfb nötig)
 ```
 
 Ein Git-Tag `v*` löst den Release-Workflow aus, der Windows- und
