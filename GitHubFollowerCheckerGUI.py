@@ -13,6 +13,7 @@ Arbeitsspeicher – es wird weder gespeichert noch geloggt.
 """
 
 import csv
+import io
 import json
 import os
 import subprocess
@@ -22,14 +23,16 @@ import time
 import webbrowser
 from datetime import datetime
 from pathlib import Path
-from tkinter import Menu, filedialog, font as tkfont, messagebox, ttk
+from tkinter import Canvas, Menu, PhotoImage, filedialog, font as tkfont, messagebox, ttk
 from typing import Callable, Optional, Set
+
+__version__ = "1.1.0"
 
 
 def _ensure_dependencies() -> None:
     """Installiert fehlende Pakete, damit der Doppelklick-Start funktioniert."""
     missing = []
-    for package in ("customtkinter", "requests"):
+    for package in ("customtkinter", "requests", "keyring"):
         try:
             __import__(package)
         except ImportError:
@@ -50,6 +53,14 @@ _ensure_dependencies()
 
 import customtkinter as ctk  # noqa: E402
 import requests  # noqa: E402
+from PIL import Image  # noqa: E402  (Abhängigkeit von customtkinter)
+
+try:
+    import keyring  # noqa: E402
+except Exception:  # keyring ist optional – ohne Backend einfach deaktivieren
+    keyring = None
+
+KEYRING_SERVICE = "github-follower-checker"
 
 BASE_URL = "https://api.github.com"
 
@@ -61,7 +72,11 @@ TABS = (
     ("fans", "Fans"),
     ("followers", "Follower"),
     ("following", "Following"),
+    ("changes", "Verlauf"),
 )
+
+# Anzahl gespeicherter Analyse-Stände pro Nutzer
+HISTORY_LIMIT = 50
 TAB_LABELS = dict(TABS)
 LABEL_TO_KEY = {label: key for key, label in TABS}
 
@@ -119,6 +134,15 @@ def _save_history(history: dict) -> None:
         pass  # Verlauf ist nicht kritisch
 
 
+def _normalize_history_entries(value) -> list:
+    """Migriert das alte Ein-Snapshot-Format auf die Snapshot-Liste."""
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return value
+    return []
+
+
 def compute_follower_delta(previous: Set[str], current: Set[str]) -> tuple:
     """Neue und verlorene Follower seit dem letzten Lauf, alphabetisch sortiert."""
     by_name = lambda u: u.lower()  # noqa: E731
@@ -165,14 +189,20 @@ class AuthError(Exception):
 class GitHubClient:
     def __init__(self, username: str, token: str):
         self.username = username
+        self.rate_remaining: Optional[int] = None
+        self.rate_limit: Optional[int] = None
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
         })
 
-    @staticmethod
-    def _raise_for_rate_limit(response: requests.Response) -> None:
+    def _raise_for_rate_limit(self, response: requests.Response) -> None:
+        try:
+            self.rate_remaining = int(response.headers["X-RateLimit-Remaining"])
+            self.rate_limit = int(response.headers["X-RateLimit-Limit"])
+        except (KeyError, ValueError):
+            pass
         if (
             response.status_code in (403, 429)
             and response.headers.get("X-RateLimit-Remaining") == "0"
@@ -231,6 +261,12 @@ class GitHubClient:
             return True, "✓ Gefolgt"
         return False, f"Fehler (HTTP {response.status_code})"
 
+    def get_user(self, user: str) -> dict:
+        response = self.session.get(f"{BASE_URL}/users/{user}", timeout=10)
+        self._raise_for_rate_limit(response)
+        response.raise_for_status()
+        return response.json()
+
 
 class FollowerCheckerApp(ctk.CTk):
     def __init__(self):
@@ -248,8 +284,14 @@ class FollowerCheckerApp(ctk.CTk):
         ctk.set_window_scaling(self.ui_scale)
 
         self.title("GitHub Follower Checker")
-        self.geometry("1100x680")
+        self.geometry("1180x740")
         self._apply_minsize()
+        icon_path = Path(__file__).resolve().parent / "docs" / "icon.png"
+        if icon_path.exists():
+            try:
+                self.iconphoto(True, PhotoImage(file=str(icon_path)))
+            except Exception:
+                pass
 
         self.client: Optional[GitHubClient] = None
         self.followers: Set[str] = set()
@@ -261,6 +303,11 @@ class FollowerCheckerApp(ctk.CTk):
         self._busy = False
         self.whitelist: Set[str] = set(self.settings.get("whitelist", []))
         self.last_unfollowed = []
+        self.sort_state["changes"] = ("status", True)  # Verlauf: Neuestes zuerst
+        self._spark_counts = []
+        self._profile_cache = {}
+        self._detail_after = None
+        self._pending_token = None
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -281,7 +328,7 @@ class FollowerCheckerApp(ctk.CTk):
             if saved:
                 self.wm_geometry(saved)
             else:
-                self.geometry("1100x680")
+                self.geometry("1180x740")
         except Exception:
             pass
 
@@ -304,7 +351,7 @@ class FollowerCheckerApp(ctk.CTk):
             sidebar,
             text="🐙 Follower Checker",
             font=ctk.CTkFont(size=21, weight="bold"),
-        ).pack(anchor="w", padx=20, pady=(20, 2))
+        ).pack(anchor="w", padx=20, pady=(14, 0))
         ctk.CTkLabel(
             sidebar,
             text="GitHub-Beziehungen analysieren",
@@ -312,7 +359,7 @@ class FollowerCheckerApp(ctk.CTk):
             text_color=("gray40", "gray60"),
         ).pack(anchor="w", padx=20)
 
-        self._section_label(sidebar, "ZUGANGSDATEN", pady=(22, 6))
+        self._section_label(sidebar, "ZUGANGSDATEN", pady=(16, 4))
 
         self.username_entry = ctk.CTkEntry(
             sidebar, placeholder_text="GitHub-Username", height=36
@@ -335,6 +382,21 @@ class FollowerCheckerApp(ctk.CTk):
         )
         self.show_token.pack(anchor="w", padx=20, pady=(8, 0))
 
+        self.remember_token = None
+        if keyring is not None:
+            self.remember_token = ctk.CTkCheckBox(
+                sidebar,
+                text="Token merken (Schlüsselbund)",
+                font=ctk.CTkFont(size=12),
+                command=self._on_remember_toggle,
+                checkbox_width=18,
+                checkbox_height=18,
+            )
+            self.remember_token.pack(anchor="w", padx=20, pady=(6, 0))
+            if self.settings.get("remember_token"):
+                self.remember_token.select()
+                self._prefill_credentials()
+
         self.analyze_button = ctk.CTkButton(
             sidebar,
             text="Analyse starten",
@@ -342,10 +404,10 @@ class FollowerCheckerApp(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"),
             command=self.start_analysis,
         )
-        self.analyze_button.pack(fill="x", padx=20, pady=(16, 0))
+        self.analyze_button.pack(fill="x", padx=20, pady=(12, 0))
 
         self.progress = ctk.CTkProgressBar(sidebar, height=6)
-        self.progress.pack(fill="x", padx=20, pady=(12, 0))
+        self.progress.pack(fill="x", padx=20, pady=(8, 0))
         self.progress.set(0)
 
         self.status_label = ctk.CTkLabel(
@@ -357,9 +419,9 @@ class FollowerCheckerApp(ctk.CTk):
             justify="left",
             anchor="w",
         )
-        self.status_label.pack(fill="x", padx=20, pady=(8, 0))
+        self.status_label.pack(fill="x", padx=20, pady=(6, 0))
 
-        self._section_label(sidebar, "ERGEBNIS", pady=(18, 6))
+        self._section_label(sidebar, "ERGEBNIS", pady=(14, 4))
 
         stats_card = ctk.CTkFrame(sidebar, corner_radius=10)
         stats_card.pack(fill="x", padx=20)
@@ -404,9 +466,14 @@ class FollowerCheckerApp(ctk.CTk):
         )
         self.delta_label.pack(fill="x", padx=20)
 
+        # Follower-Verlauf als Mini-Diagramm (erscheint ab zwei Analysen)
+        self.spark_canvas = Canvas(
+            sidebar, height=36, width=250, highlightthickness=0, bd=0
+        )
+
         ctk.CTkLabel(
             sidebar,
-            text="MIT License · GitHub REST API v3",
+            text=f"v{__version__} · MIT License · GitHub REST API v3",
             font=ctk.CTkFont(size=10),
             text_color=("gray45", "gray50"),
         ).pack(side="bottom", pady=(0, 12))
@@ -434,6 +501,59 @@ class FollowerCheckerApp(ctk.CTk):
         )
         self.zoom_menu.set(f"{int(self.ui_scale * 100)} %")
         self.zoom_menu.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
+        self.rate_label = ctk.CTkLabel(
+            sidebar,
+            text="",
+            font=ctk.CTkFont(size=10),
+            text_color=("gray45", "gray50"),
+            anchor="w",
+        )
+        self.rate_label.pack(side="bottom", fill="x", padx=20, pady=(0, 4))
+
+    def _prefill_credentials(self):
+        """Füllt Username/Token aus Settings und Schlüsselbund vor."""
+        last = self.settings.get("last_username")
+        if not last:
+            return
+        self.username_entry.insert(0, last)
+        try:
+            token = keyring.get_password(KEYRING_SERVICE, last)
+        except Exception:
+            token = None
+        if token:
+            self.token_entry.insert(0, token)
+            self.status_label.configure(
+                text="Zugangsdaten aus dem Schlüsselbund geladen."
+            )
+
+    def _on_remember_toggle(self):
+        remember = bool(self.remember_token.get())
+        self.settings["remember_token"] = remember
+        if not remember:
+            last = self.settings.get("last_username")
+            if last:
+                try:
+                    keyring.delete_password(KEYRING_SERVICE, last)
+                except Exception:
+                    pass
+        _save_settings(self.settings)
+
+    def _persist_credentials(self, username, token):
+        """Speichert Token im Schlüsselbund, wenn „Token merken“ aktiv ist."""
+        self.settings["last_username"] = username
+        if self.remember_token is not None and self.remember_token.get():
+            try:
+                keyring.set_password(KEYRING_SERVICE, username, token)
+            except Exception:
+                pass
+        _save_settings(self.settings)
+
+    def _update_rate_label(self):
+        remaining = getattr(self.client, "rate_remaining", None)
+        limit = getattr(self.client, "rate_limit", None)
+        if remaining is not None and limit:
+            self.rate_label.configure(text=f"API-Limit: {remaining}/{limit}")
 
     @staticmethod
     def _section_label(parent, text, pady):
@@ -501,9 +621,7 @@ class FollowerCheckerApp(ctk.CTk):
             style="Checker.Treeview",
             selectmode="extended",
         )
-        self.tree.bind(
-            "<<TreeviewSelect>>", lambda _e: self._update_unfollow_buttons()
-        )
+        self.tree.bind("<<TreeviewSelect>>", lambda _e: self._on_selection_change())
         self.tree.bind("<Button-3>", self._show_context_menu)
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.column("user", width=280, anchor="w")
@@ -524,8 +642,21 @@ class FollowerCheckerApp(ctk.CTk):
             justify="center",
         )
 
+        # Profil-Panel: erscheint, wenn genau ein Nutzer ausgewählt ist
+        self.detail_frame = ctk.CTkFrame(main, corner_radius=10)
+        self.detail_avatar = ctk.CTkLabel(self.detail_frame, text="")
+        self.detail_avatar.pack(side="left", padx=(12, 10), pady=8)
+        self.detail_text = ctk.CTkLabel(
+            self.detail_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+            justify="left",
+            anchor="w",
+        )
+        self.detail_text.pack(side="left", fill="x", expand=True, pady=8, padx=(0, 12))
+
         bottom_bar = ctk.CTkFrame(main, fg_color="transparent")
-        bottom_bar.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        bottom_bar.grid(row=3, column=0, sticky="ew", pady=(12, 0))
 
         self.unfollow_button = ctk.CTkButton(
             bottom_bar,
@@ -629,6 +760,8 @@ class FollowerCheckerApp(ctk.CTk):
         self.tree.column("you_follow", width=int(110 * scale), anchor="center", stretch=False)
         self.tree.column("status", width=int(200 * scale), anchor="w", stretch=False)
 
+        self._draw_sparkline()
+
     # ---------------------------------------------------------- Tabelle
 
     def _on_tab_change(self, label):
@@ -647,7 +780,8 @@ class FollowerCheckerApp(ctk.CTk):
             return (row["user"].lower(),)
         if col in ("follows_you", "you_follow"):
             return (row[col], row["user"].lower())
-        return (row["status"], row["user"].lower())
+        # Verlauf-Zeilen tragen einen ISO-Zeitstempel als Sortierschlüssel
+        return (row.get("sort", row["status"]), row["user"].lower())
 
     def _visible_rows(self):
         rows = self.rows[self.current_tab]
@@ -726,11 +860,13 @@ class FollowerCheckerApp(ctk.CTk):
         ]
 
     def _set_row_status(self, user, text):
-        for rows in self.rows.values():
+        for key, rows in self.rows.items():
+            if key == "changes":  # Verlaufs-Einträge nicht überschreiben
+                continue
             for row in rows:
                 if row["user"] == user:
                     row["status"] = text
-        if self.tree.exists(user):
+        if self.current_tab != "changes" and self.tree.exists(user):
             self.tree.set(user, "status", text)
 
     def _update_stats(self):
@@ -808,6 +944,105 @@ class FollowerCheckerApp(ctk.CTk):
         _save_settings(self.settings)
         self.unfollow_candidates = self._compute_candidates()
         self._populate_tree()
+
+    # ------------------------------------------------- Profil-Detailpanel
+
+    def _on_selection_change(self):
+        self._update_unfollow_buttons()
+        self._schedule_detail_update()
+
+    def _schedule_detail_update(self):
+        if self._detail_after is not None:
+            self.after_cancel(self._detail_after)
+            self._detail_after = None
+        selection = self.tree.selection()
+        usable = (
+            len(selection) == 1
+            and self.client is not None
+            and hasattr(self.client, "get_user")
+            and not self._busy
+        )
+        if not usable:
+            self.detail_frame.grid_remove()
+            return
+        user = selection[0]
+        if user in self._profile_cache:
+            self._show_detail(user)
+        else:
+            self._detail_after = self.after(350, lambda: self._start_profile_fetch(user))
+
+    def _start_profile_fetch(self, user):
+        self._detail_after = None
+        threading.Thread(target=self._profile_worker, args=(user,), daemon=True).start()
+
+    def _profile_worker(self, user):
+        try:
+            data = self.client.get_user(user)
+            avatar = None
+            url = data.get("avatar_url")
+            if url:
+                response = self.client.session.get(url, params={"s": 96}, timeout=10)
+                if response.status_code == 200:
+                    avatar = response.content
+        except Exception:
+            return  # Panel ist reiner Komfort – Fehler still ignorieren
+        self._ui(self._store_profile, user, data, avatar)
+
+    def _store_profile(self, user, data, avatar_bytes):
+        image = None
+        if avatar_bytes:
+            try:
+                pil = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+                image = ctk.CTkImage(light_image=pil, dark_image=pil, size=(36, 36))
+            except Exception:
+                image = None
+        self._profile_cache[user] = (data, image)
+        selection = self.tree.selection()
+        if len(selection) == 1 and selection[0] == user:
+            self._show_detail(user)
+
+    def _show_detail(self, user):
+        data, image = self._profile_cache[user]
+        name = data.get("name") or user
+        parts = [name if name == user else f"{name} (@{user})"]
+        parts.append(f"{data.get('followers', '?')} Follower")
+        parts.append(f"{data.get('following', '?')} Following")
+        created = str(data.get("created_at", ""))[:4]
+        if created:
+            parts.append(f"dabei seit {created}")
+        lines = ["  ·  ".join(parts)]
+        bio = (data.get("bio") or "").strip().replace("\n", " ")
+        if bio:
+            if len(bio) > 110:
+                bio = bio[:110] + "…"
+            lines.append(bio)
+        self.detail_text.configure(text="\n".join(lines))
+        self.detail_avatar.configure(image=image, text="" if image else "👤")
+        self.detail_frame.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+
+    # ------------------------------------------------------- Sparkline
+
+    def _draw_sparkline(self):
+        counts = self._spark_counts[-30:]
+        if len(counts) < 2:
+            self.spark_canvas.pack_forget()
+            return
+        dark = ctk.get_appearance_mode() == "Dark"
+        self.spark_canvas.configure(bg="#2b2b2b" if dark else "#dbdbdb")
+        line = "#4d9de0" if dark else "#1f538d"
+        self.spark_canvas.delete("all")
+        w, h, pad = 250, 36, 5
+        lo, hi = min(counts), max(counts)
+        span = (hi - lo) or 1
+        points = []
+        for i, value in enumerate(counts):
+            x = pad + i * (w - 2 * pad) / (len(counts) - 1)
+            y = h - pad - (value - lo) * (h - 2 * pad) / span
+            points.extend((x, y))
+        self.spark_canvas.create_line(*points, fill=line, width=2)
+        x, y = points[-2], points[-1]
+        self.spark_canvas.create_oval(x - 3, y - 3, x + 3, y + 3, fill=line, outline="")
+        self.spark_canvas.pack(fill="x", padx=20, pady=(6, 0))
 
     # ---------------------------------------------------- Kontextmenü
 
@@ -974,6 +1209,7 @@ class FollowerCheckerApp(ctk.CTk):
                 "Eingabe fehlt", "Bitte gib Username und Token ein."
             )
             return
+        self._pending_token = token
         self._set_busy(True, "Validiere Zugangsdaten…")
         threading.Thread(
             target=self._analysis_worker, args=(username, token), daemon=True
@@ -1020,22 +1256,60 @@ class FollowerCheckerApp(ctk.CTk):
                 "Keine Verbindung zur GitHub-API. Prüfe deine Internetverbindung.",
             )
 
+    def _rebuild_changes_rows(self, entries):
+        """Baut den Verlauf-Tab aus den gespeicherten Analyse-Ständen.
+
+        Pro Nutzer bleibt das jeweils letzte Ereignis stehen (eindeutige
+        Zeilen-IDs), sortiert wird über den ISO-Zeitstempel in "sort".
+        """
+        events = {}
+        for prev, curr in zip(entries[:-1], entries[1:]):
+            stamp = str(curr.get("timestamp", ""))
+            try:
+                when = datetime.fromisoformat(stamp).strftime("%d.%m.%Y")
+            except ValueError:
+                when = "unbekannt"
+            gained, lost = compute_follower_delta(
+                set(prev.get("followers", [])), set(curr.get("followers", []))
+            )
+            for user in gained:
+                events[user] = (stamp, f"+ folgt dir seit {when}")
+            for user in lost:
+                events[user] = (stamp, f"− entfolgte dich am {when}")
+        self.rows["changes"] = [
+            {
+                "user": user,
+                "follows_you": user in self.followers,
+                "you_follow": user in self.following,
+                "status": text,
+                "sort": stamp,
+            }
+            for user, (stamp, text) in events.items()
+        ]
+
     def _update_history(self):
         """Speichert den Analyse-Stand und liefert den Vergleichstext."""
         history = _load_history()
-        previous = history.get(self.client.username)
-        history[self.client.username] = {
+        entries = _normalize_history_entries(history.get(self.client.username))
+        entries.append({
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "followers": sorted(self.followers),
             "following": sorted(self.following),
-        }
+        })
+        entries = entries[-HISTORY_LIMIT:]
+        history[self.client.username] = entries
         _save_history(history)
 
-        if not previous:
+        self._spark_counts = [len(e.get("followers", [])) for e in entries]
+        self._draw_sparkline()
+        self._rebuild_changes_rows(entries)
+
+        if len(entries) < 2:
             return (
                 "Erste Analyse gespeichert – Veränderungen "
                 "siehst du beim nächsten Lauf."
             )
+        previous = entries[-2]
         gained, lost = compute_follower_delta(
             set(previous.get("followers", [])), self.followers
         )
@@ -1066,10 +1340,15 @@ class FollowerCheckerApp(ctk.CTk):
         self.following = following
         self._rebuild_rows()
         self._hide_undo_button()
+        self._profile_cache.clear()
         self.unfollow_candidates = self._compute_candidates()
         self._update_stats()
         if self.client:
             self.delta_label.configure(text=self._update_history())
+            self._update_rate_label()
+            if self._pending_token:
+                self._persist_credentials(self.client.username, self._pending_token)
+                self._pending_token = None
 
         self.segment.set(TAB_LABELS["unfollower"])
         self.current_tab = "unfollower"
@@ -1173,6 +1452,7 @@ class FollowerCheckerApp(ctk.CTk):
     def _finish_unfollow(self, succeeded, failed, rate_limited):
         self.unfollow_candidates = self._compute_candidates()
         self._update_stats()
+        self._update_rate_label()
         if succeeded:
             self.last_unfollowed = list(succeeded)
             self._show_undo_button()
@@ -1233,6 +1513,7 @@ class FollowerCheckerApp(ctk.CTk):
             self._hide_undo_button()
         self.unfollow_candidates = self._compute_candidates()
         self._update_stats()
+        self._update_rate_label()
 
         parts = [f"{len(succeeded)} gefolgt"]
         if failed:
