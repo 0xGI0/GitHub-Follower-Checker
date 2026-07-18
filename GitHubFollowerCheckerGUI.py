@@ -3,9 +3,13 @@
 """GitHub Follower Checker – GUI (CustomTkinter).
 
 Analysiert Follower/Following über die GitHub REST API v3 und kann Nutzern
-entfolgen, die nicht zurückfolgen. Alle API-Aufrufe laufen in einem
-Hintergrund-Thread, damit die Oberfläche nicht einfriert. Das Token bleibt
-ausschließlich im Arbeitsspeicher – es wird weder gespeichert noch geloggt.
+entfolgen – allen, die nicht zurückfolgen, oder gezielt in der Tabelle
+ausgewählten Nutzern – sowie Nutzern (zurück)folgen. Dazu: Fans-Ansicht,
+Filter, Whitelist geschützter Nutzer, Rechtsklick-Menü, Rückgängig-Funktion
+und ein lokaler Verlauf, der Follower-Veränderungen zwischen zwei Analysen
+anzeigt. Alle API-Aufrufe laufen in einem Hintergrund-Thread, damit die
+Oberfläche nicht einfriert. Das Token bleibt ausschließlich im
+Arbeitsspeicher – es wird weder gespeichert noch geloggt.
 """
 
 import csv
@@ -15,9 +19,10 @@ import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, font as tkfont, messagebox, ttk
+from tkinter import Menu, filedialog, font as tkfont, messagebox, ttk
 from typing import Callable, Optional, Set
 
 
@@ -48,8 +53,12 @@ import requests  # noqa: E402
 
 BASE_URL = "https://api.github.com"
 
+# Pause zwischen Folgen/Entfolgen-Requests (Rate-Limit-Schonung)
+ACTION_DELAY = 1.0
+
 TABS = (
     ("unfollower", "Folgen nicht zurück"),
+    ("fans", "Fans"),
     ("followers", "Follower"),
     ("following", "Following"),
 )
@@ -64,8 +73,12 @@ COLUMN_TITLES = {
     "status": "Status",
 }
 
-# Nur Darstellungs-Einstellungen (Zoom, Theme) – niemals Zugangsdaten!
+# Nur Darstellungs-Einstellungen (Zoom, Theme, Fenster, Whitelist) –
+# niemals Zugangsdaten!
 SETTINGS_PATH = Path.home() / ".config" / "github-follower-checker" / "settings.json"
+
+# Letzter Analyse-Stand pro Username (nur Nutzernamen, kein Token)
+HISTORY_PATH = SETTINGS_PATH.parent / "history.json"
 
 ZOOM_STEPS = (1.0, 1.25, 1.5, 1.75, 2.0)
 
@@ -86,6 +99,33 @@ def _save_settings(settings: dict) -> None:
             json.dump(settings, f, indent=2)
     except OSError:
         pass  # Anzeige-Einstellungen sind nicht kritisch
+
+
+def _load_history() -> dict:
+    try:
+        with open(HISTORY_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_history(history: dict) -> None:
+    try:
+        HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2)
+    except OSError:
+        pass  # Verlauf ist nicht kritisch
+
+
+def compute_follower_delta(previous: Set[str], current: Set[str]) -> tuple:
+    """Neue und verlorene Follower seit dem letzten Lauf, alphabetisch sortiert."""
+    by_name = lambda u: u.lower()  # noqa: E731
+    return (
+        sorted(current - previous, key=by_name),
+        sorted(previous - current, key=by_name),
+    )
 
 
 TREE_THEME = {
@@ -182,6 +222,15 @@ class GitHubClient:
             return True, "✓ Entfolgt"
         return False, f"Fehler (HTTP {response.status_code})"
 
+    def follow(self, user: str) -> tuple:
+        response = self.session.put(
+            f"{BASE_URL}/user/following/{user}", timeout=10
+        )
+        self._raise_for_rate_limit(response)
+        if response.status_code == 204:
+            return True, "✓ Gefolgt"
+        return False, f"Fehler (HTTP {response.status_code})"
+
 
 class FollowerCheckerApp(ctk.CTk):
     def __init__(self):
@@ -209,6 +258,9 @@ class FollowerCheckerApp(ctk.CTk):
         self.sort_state = {}
         self.unfollow_candidates = []
         self.current_tab = "unfollower"
+        self._busy = False
+        self.whitelist: Set[str] = set(self.settings.get("whitelist", []))
+        self.last_unfollowed = []
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -217,6 +269,27 @@ class FollowerCheckerApp(ctk.CTk):
         self._build_main()
         self._style_treeview()
         self._populate_tree()
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Manche Window-Manager stauchen das Fenster beim Start auf die
+        # Mindestgröße – Geometrie nach dem Mapping erneut durchsetzen.
+        self.after(250, self._restore_geometry)
+
+    def _restore_geometry(self):
+        saved = self.settings.get("window_geometry")
+        try:
+            if saved:
+                self.wm_geometry(saved)
+            else:
+                self.geometry("1100x680")
+        except Exception:
+            pass
+
+    def _on_close(self):
+        self.settings["window_geometry"] = self.wm_geometry()
+        self.settings["whitelist"] = sorted(self.whitelist)
+        _save_settings(self.settings)
+        self.destroy()
 
     # ------------------------------------------------------------- Aufbau
 
@@ -294,6 +367,7 @@ class FollowerCheckerApp(ctk.CTk):
         stats = (
             ("followers", "Follower", None),
             ("following", "Following", None),
+            ("fans", "Fans", ("#2e7d32", "#66bb6a")),
             ("unfollower", "Folgen nicht zurück", ("#c62828", "#ef5350")),
         )
         for i, (key, title, accent) in enumerate(stats):
@@ -301,7 +375,7 @@ class FollowerCheckerApp(ctk.CTk):
             row.pack(
                 fill="x",
                 padx=14,
-                pady=(12 if i == 0 else 4, 12 if i == len(stats) - 1 else 4),
+                pady=(10 if i == 0 else 3, 10 if i == len(stats) - 1 else 3),
             )
             ctk.CTkLabel(
                 row,
@@ -317,6 +391,18 @@ class FollowerCheckerApp(ctk.CTk):
             )
             value.pack(side="right")
             self.stat_values[key] = value
+
+        self._section_label(sidebar, "SEIT LETZTER ANALYSE", pady=(14, 4))
+        self.delta_label = ctk.CTkLabel(
+            sidebar,
+            text="Noch kein Vergleich vorhanden.",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray30", "gray65"),
+            wraplength=250,
+            justify="left",
+            anchor="w",
+        )
+        self.delta_label.pack(fill="x", padx=20)
 
         ctk.CTkLabel(
             sidebar,
@@ -391,6 +477,20 @@ class FollowerCheckerApp(ctk.CTk):
         )
         self.export_button.pack(side="right")
 
+        self.search_entry = ctk.CTkEntry(
+            top_bar,
+            placeholder_text="🔍  Nutzer filtern…",
+            width=180,
+            height=32,
+            font=ctk.CTkFont(size=12),
+        )
+        self.search_entry.pack(side="right", padx=(0, 8))
+        self.search_entry.bind("<KeyRelease>", lambda _e: self._populate_tree())
+        self.search_entry.bind(
+            "<Escape>",
+            lambda _e: (self.search_entry.delete(0, "end"), self._populate_tree()),
+        )
+
         self.table_frame = ctk.CTkFrame(main, corner_radius=10)
         self.table_frame.grid(row=1, column=0, sticky="nsew")
 
@@ -399,8 +499,13 @@ class FollowerCheckerApp(ctk.CTk):
             columns=COLUMNS,
             show="headings",
             style="Checker.Treeview",
-            selectmode="browse",
+            selectmode="extended",
         )
+        self.tree.bind(
+            "<<TreeviewSelect>>", lambda _e: self._update_unfollow_buttons()
+        )
+        self.tree.bind("<Button-3>", self._show_context_menu)
+        self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.column("user", width=280, anchor="w")
         self.tree.column("follows_you", width=110, anchor="center", stretch=False)
         self.tree.column("you_follow", width=110, anchor="center", stretch=False)
@@ -422,17 +527,10 @@ class FollowerCheckerApp(ctk.CTk):
         bottom_bar = ctk.CTkFrame(main, fg_color="transparent")
         bottom_bar.grid(row=2, column=0, sticky="ew", pady=(12, 0))
 
-        ctk.CTkLabel(
-            bottom_bar,
-            text="Tipp: Klick auf eine Spaltenüberschrift sortiert die Tabelle.",
-            font=ctk.CTkFont(size=11),
-            text_color=("gray45", "gray55"),
-        ).pack(side="left")
-
         self.unfollow_button = ctk.CTkButton(
             bottom_bar,
-            text="🚫 Entfolgen",
-            width=170,
+            text="🚫 Alle Nicht-Folgenden",
+            width=190,
             height=34,
             font=ctk.CTkFont(size=13, weight="bold"),
             fg_color=("#c62828", "#b3261e"),
@@ -441,6 +539,45 @@ class FollowerCheckerApp(ctk.CTk):
             command=self.confirm_unfollow,
         )
         self.unfollow_button.pack(side="right")
+
+        self.unfollow_selected_button = ctk.CTkButton(
+            bottom_bar,
+            text="Auswahl entfolgen",
+            width=150,
+            height=34,
+            font=ctk.CTkFont(size=13),
+            fg_color="transparent",
+            border_width=1,
+            border_color=("#c62828", "#b3261e"),
+            text_color=("#c62828", "#ef5350"),
+            hover_color=("gray85", "gray25"),
+            state="disabled",
+            command=self.confirm_unfollow_selection,
+        )
+        self.unfollow_selected_button.pack(side="right", padx=(0, 8))
+
+        # Erscheint erst nach einem Entfolgen-Lauf (folgt den Nutzern wieder)
+        self.undo_button = ctk.CTkButton(
+            bottom_bar,
+            text="↩ Rückgängig",
+            width=140,
+            height=34,
+            font=ctk.CTkFont(size=13),
+            fg_color="transparent",
+            border_width=1,
+            border_color=("gray55", "gray40"),
+            text_color=("gray15", "gray85"),
+            hover_color=("gray85", "gray25"),
+            command=self.undo_unfollow,
+        )
+
+        ctk.CTkLabel(
+            bottom_bar,
+            text="Tipp: Strg/Shift-Klick wählt mehrere, Rechtsklick öffnet Aktionen.",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray45", "gray55"),
+            anchor="w",
+        ).pack(side="left", fill="x")
 
     def _style_treeview(self):
         mode = "dark" if ctk.get_appearance_mode() == "Dark" else "light"
@@ -512,28 +649,40 @@ class FollowerCheckerApp(ctk.CTk):
             return (row[col], row["user"].lower())
         return (row["status"], row["user"].lower())
 
+    def _visible_rows(self):
+        rows = self.rows[self.current_tab]
+        term = self.search_entry.get().strip().lower()
+        if term:
+            rows = [r for r in rows if term in r["user"].lower()]
+        return rows
+
     def _populate_tree(self):
+        selected = set(self.tree.selection())
         self.tree.delete(*self.tree.get_children())
 
         col, reverse = self.sort_state.get(self.current_tab, ("user", False))
         rows = sorted(
-            self.rows[self.current_tab],
+            self._visible_rows(),
             key=lambda r: self._sort_key(r, col),
             reverse=reverse,
         )
         for index, row in enumerate(rows):
+            shield = "🛡 " if row["user"] in self.whitelist else ""
             self.tree.insert(
                 "",
                 "end",
                 iid=row["user"],
                 tags=("odd",) if index % 2 else (),
                 values=(
-                    row["user"],
+                    shield + row["user"],
                     "✓" if row["follows_you"] else "–",
                     "✓" if row["you_follow"] else "–",
                     row["status"],
                 ),
             )
+        keep = [r["user"] for r in rows if r["user"] in selected]
+        if keep:
+            self.tree.selection_set(keep)
 
         for c in COLUMNS:
             arrow = ("  ↓" if reverse else "  ↑") if c == col else ""
@@ -544,13 +693,18 @@ class FollowerCheckerApp(ctk.CTk):
                 command=lambda c=c: self._sort_by(c),
             )
 
-        display = COLUMNS if self.current_tab == "unfollower" else COLUMNS[:3]
-        self.tree.configure(displaycolumns=display)
-
         if rows:
             self.empty_label.place_forget()
         else:
+            term = self.search_entry.get().strip()
+            self.empty_label.configure(
+                text=f"Keine Treffer für „{term}“."
+                if term
+                else "Noch keine Daten.\nStarte links eine Analyse."
+            )
             self.empty_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        self._update_unfollow_buttons()
 
     def _rebuild_rows(self):
         def row(user):
@@ -567,6 +721,9 @@ class FollowerCheckerApp(ctk.CTk):
         self.rows["unfollower"] = [
             row(u) for u in sorted(self.following - self.followers, key=by_name)
         ]
+        self.rows["fans"] = [
+            row(u) for u in sorted(self.followers - self.following, key=by_name)
+        ]
 
     def _set_row_status(self, user, text):
         for rows in self.rows.values():
@@ -579,9 +736,142 @@ class FollowerCheckerApp(ctk.CTk):
     def _update_stats(self):
         self.stat_values["followers"].configure(text=str(len(self.followers)))
         self.stat_values["following"].configure(text=str(len(self.following)))
+        self.stat_values["fans"].configure(
+            text=str(len(self.followers - self.following))
+        )
         self.stat_values["unfollower"].configure(
             text=str(len(self.following - self.followers))
         )
+
+    def _selected_unfollowable(self):
+        """Ausgewählte Nutzer, denen aktuell noch gefolgt wird."""
+        return [u for u in self.tree.selection() if u in self.following]
+
+    def _compute_candidates(self):
+        """Nicht-Zurückfolgende ohne bereits Entfolgte und ohne Whitelist."""
+        return [
+            r["user"]
+            for r in self.rows["unfollower"]
+            if r["status"] != "✓ Entfolgt" and r["user"] not in self.whitelist
+        ]
+
+    def _update_unfollow_buttons(self):
+        n = len(self.unfollow_candidates)
+        self.unfollow_button.configure(
+            text=f"🚫 Alle Nicht-Folgenden ({n})" if n else "🚫 Alle Nicht-Folgenden",
+            state="normal" if n and not self._busy else "disabled",
+        )
+        m = len(self._selected_unfollowable())
+        self.unfollow_selected_button.configure(
+            text=f"Auswahl entfolgen ({m})" if m else "Auswahl entfolgen",
+            state="normal" if m and not self._busy else "disabled",
+        )
+        if self.last_unfollowed:
+            self.undo_button.configure(
+                text=f"↩ Rückgängig ({len(self.last_unfollowed)})",
+                state="disabled" if self._busy else "normal",
+            )
+
+    def _show_undo_button(self):
+        self.undo_button.pack(
+            side="right", padx=(0, 8), after=self.unfollow_selected_button
+        )
+
+    def _hide_undo_button(self):
+        self.last_unfollowed = []
+        self.undo_button.pack_forget()
+
+    def _mark_unfollowed(self, user):
+        self.following.discard(user)
+        for rows in self.rows.values():
+            for row in rows:
+                if row["user"] == user:
+                    row["you_follow"] = False
+        if self.tree.exists(user):
+            self.tree.set(user, "you_follow", "–")
+
+    def _mark_followed(self, user):
+        self.following.add(user)
+        for rows in self.rows.values():
+            for row in rows:
+                if row["user"] == user:
+                    row["you_follow"] = True
+        if self.tree.exists(user):
+            self.tree.set(user, "you_follow", "✓")
+
+    def _set_protected(self, users, protect):
+        if protect:
+            self.whitelist.update(users)
+        else:
+            self.whitelist.difference_update(users)
+        self.settings["whitelist"] = sorted(self.whitelist)
+        _save_settings(self.settings)
+        self.unfollow_candidates = self._compute_candidates()
+        self._populate_tree()
+
+    # ---------------------------------------------------- Kontextmenü
+
+    def _show_context_menu(self, event):
+        if self._busy:
+            return
+        row = self.tree.identify_row(event.y)
+        if row and row not in self.tree.selection():
+            self.tree.selection_set(row)
+        selection = list(self.tree.selection())
+        if not selection:
+            return
+
+        to_unfollow = [u for u in selection if u in self.following]
+        to_follow = [u for u in selection if u not in self.following]
+        unprotected = [u for u in selection if u not in self.whitelist]
+        protected = [u for u in selection if u in self.whitelist]
+
+        menu = Menu(self, tearoff=0)
+        menu.add_command(
+            label="Profil im Browser öffnen"
+            if len(selection) == 1
+            else f"{min(len(selection), 5)} Profile im Browser öffnen",
+            command=lambda: self._open_profiles(selection),
+        )
+        if (to_follow and self.client) or to_unfollow:
+            menu.add_separator()
+        if to_follow and self.client:
+            menu.add_command(
+                label=f"➕ Folgen ({len(to_follow)})",
+                command=lambda: self._start_follow(to_follow),
+            )
+        if to_unfollow:
+            menu.add_command(
+                label=f"🚫 Entfolgen ({len(to_unfollow)})",
+                command=lambda: self._confirm_and_unfollow(
+                    to_unfollow, self._selection_question(to_unfollow)
+                ),
+            )
+        menu.add_separator()
+        if unprotected:
+            menu.add_command(
+                label=f"🛡 Schützen ({len(unprotected)})",
+                command=lambda: self._set_protected(unprotected, True),
+            )
+        if protected:
+            menu.add_command(
+                label=f"Schutz aufheben ({len(protected)})",
+                command=lambda: self._set_protected(protected, False),
+            )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _on_double_click(self, event):
+        row = self.tree.identify_row(event.y)
+        if row:
+            self._open_profiles([row])
+
+    @staticmethod
+    def _open_profiles(users):
+        for user in users[:5]:
+            webbrowser.open(f"https://github.com/{user}")
 
     # ------------------------------------------------------- Interaktion
 
@@ -634,11 +924,11 @@ class FollowerCheckerApp(ctk.CTk):
         self.after(0, lambda: fn(*args, **kwargs))
 
     def _set_busy(self, busy, status=None, mode="indeterminate"):
+        self._busy = busy
         state = "disabled" if busy else "normal"
         self.analyze_button.configure(state=state)
         self.export_button.configure(state=state)
         if busy:
-            self.unfollow_button.configure(state="disabled")
             self.progress.configure(mode=mode)
             if mode == "indeterminate":
                 self.progress.start()
@@ -649,9 +939,7 @@ class FollowerCheckerApp(ctk.CTk):
             self.progress.stop()
             self.progress.configure(mode="determinate")
             self.progress.set(0)
-            self.unfollow_button.configure(
-                state="normal" if self.unfollow_candidates else "disabled"
-            )
+        self._update_unfollow_buttons()
         if status is not None:
             self.status_label.configure(text=status)
 
@@ -732,12 +1020,56 @@ class FollowerCheckerApp(ctk.CTk):
                 "Keine Verbindung zur GitHub-API. Prüfe deine Internetverbindung.",
             )
 
+    def _update_history(self):
+        """Speichert den Analyse-Stand und liefert den Vergleichstext."""
+        history = _load_history()
+        previous = history.get(self.client.username)
+        history[self.client.username] = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "followers": sorted(self.followers),
+            "following": sorted(self.following),
+        }
+        _save_history(history)
+
+        if not previous:
+            return (
+                "Erste Analyse gespeichert – Veränderungen "
+                "siehst du beim nächsten Lauf."
+            )
+        gained, lost = compute_follower_delta(
+            set(previous.get("followers", [])), self.followers
+        )
+        try:
+            when = datetime.fromisoformat(previous["timestamp"]).strftime(
+                "%d.%m.%Y, %H:%M"
+            )
+        except (KeyError, ValueError):
+            when = "letzter Analyse"
+        if not gained and not lost:
+            return f"Keine Follower-Veränderung seit {when}."
+
+        def fmt(users):
+            names = ", ".join(users[:5])
+            if len(users) > 5:
+                names += f" … (+{len(users) - 5})"
+            return names
+
+        lines = [f"Seit {when}:"]
+        if gained:
+            lines.append(f"+{len(gained)} Follower: {fmt(gained)}")
+        if lost:
+            lines.append(f"−{len(lost)} Follower: {fmt(lost)}")
+        return "\n".join(lines)
+
     def _apply_results(self, followers, following):
         self.followers = followers
         self.following = following
         self._rebuild_rows()
-        self.unfollow_candidates = [r["user"] for r in self.rows["unfollower"]]
+        self._hide_undo_button()
+        self.unfollow_candidates = self._compute_candidates()
         self._update_stats()
+        if self.client:
+            self.delta_label.configure(text=self._update_history())
 
         self.segment.set(TAB_LABELS["unfollower"])
         self.current_tab = "unfollower"
@@ -746,34 +1078,71 @@ class FollowerCheckerApp(ctk.CTk):
         n = len(self.unfollow_candidates)
         if n:
             status = f"Analyse abgeschlossen: {n} Nutzer folgen dir nicht zurück."
-            self.unfollow_button.configure(text=f"🚫 Entfolgen ({n})")
         else:
             status = "Analyse abgeschlossen: Alle folgen dir zurück. 🎉"
-            self.unfollow_button.configure(text="🚫 Entfolgen")
         self._set_busy(False, status)
 
     # --------------------------------------------------------- Entfolgen
 
     def confirm_unfollow(self):
-        n = len(self.unfollow_candidates)
-        if not n:
+        users = list(self.unfollow_candidates)
+        if len(users) == 1:
+            question = f"Wirklich „{users[0]}“ entfolgen (folgt dir nicht zurück)?"
+        else:
+            question = (
+                f"Wirklich allen {len(users)} Nutzern entfolgen, "
+                "die dir nicht zurückfolgen?"
+            )
+        protected = [
+            r["user"]
+            for r in self.rows["unfollower"]
+            if r["user"] in self.whitelist and r["status"] != "✓ Entfolgt"
+        ]
+        if protected:
+            question += (
+                f"\n\n🛡 {len(protected)} geschützte Nutzer werden übersprungen."
+            )
+        self._confirm_and_unfollow(users, question)
+
+    @staticmethod
+    def _selection_question(users):
+        if len(users) == 1:
+            return f"Wirklich „{users[0]}“ entfolgen?"
+        shown = ", ".join(users[:8])
+        if len(users) > 8:
+            shown += f" … und {len(users) - 8} weitere"
+        return f"Wirklich {len(users)} ausgewählten Nutzern entfolgen?\n\n{shown}"
+
+    def confirm_unfollow_selection(self):
+        users = self._selected_unfollowable()
+        if not users:
+            messagebox.showinfo(
+                "Keine Auswahl",
+                "Markiere in der Tabelle Nutzer, denen du aktuell folgst.",
+            )
+            return
+        self._confirm_and_unfollow(users, self._selection_question(users))
+
+    def _confirm_and_unfollow(self, users, question):
+        if not users:
             messagebox.showinfo("Nichts zu tun", "Es gibt keine Nutzer zum Entfolgen.")
+            return
+        if not self.client:
+            messagebox.showinfo("Keine Analyse", "Starte zuerst eine Analyse.")
             return
         if not messagebox.askyesno(
             "Entfolgen bestätigen",
-            f"Wirklich {n} Nutzern entfolgen?\n\n"
-            "Diese Aktion kann nicht rückgängig gemacht werden.",
+            question + "\n\nDiese Aktion kann nicht rückgängig gemacht werden.",
         ):
             return
         self._set_busy(True, "Entfolge Nutzer…", mode="determinate")
         threading.Thread(
-            target=self._unfollow_worker,
-            args=(list(self.unfollow_candidates),),
-            daemon=True,
+            target=self._unfollow_worker, args=(list(users),), daemon=True
         ).start()
 
     def _unfollow_worker(self, users):
-        success = failed = 0
+        succeeded = []
+        failed = 0
         total = len(users)
         rate_limited = None
 
@@ -789,40 +1158,94 @@ class FollowerCheckerApp(ctk.CTk):
                 ok, status_text = False, "Netzwerkfehler"
 
             if ok:
-                success += 1
-                self.following.discard(user)
+                succeeded.append(user)
+                self._ui(self._mark_unfollowed, user)
             else:
                 failed += 1
 
             self._ui(self._set_row_status, user, status_text)
             self._ui(self.progress.set, idx / total)
             self._ui(self.status_label.configure, text=f"Entfolge Nutzer… {idx}/{total}")
-            time.sleep(1)
+            time.sleep(ACTION_DELAY)
 
-        self._ui(self._finish_unfollow, success, failed, rate_limited)
+        self._ui(self._finish_unfollow, succeeded, failed, rate_limited)
 
-    def _finish_unfollow(self, success, failed, rate_limited):
-        self.unfollow_candidates = [
-            r["user"] for r in self.rows["unfollower"] if r["status"] != "✓ Entfolgt"
-        ]
+    def _finish_unfollow(self, succeeded, failed, rate_limited):
+        self.unfollow_candidates = self._compute_candidates()
         self._update_stats()
+        if succeeded:
+            self.last_unfollowed = list(succeeded)
+            self._show_undo_button()
 
-        parts = [f"{success} entfolgt"]
+        parts = [f"{len(succeeded)} entfolgt"]
         if failed:
             parts.append(f"{failed} fehlgeschlagen")
         self._set_busy(False, "Fertig: " + ", ".join(parts) + ".")
 
-        n = len(self.unfollow_candidates)
-        self.unfollow_button.configure(
-            text=f"🚫 Entfolgen ({n})" if n else "🚫 Entfolgen"
-        )
+        if rate_limited:
+            self._show_rate_limit_message(rate_limited)
+
+    # ----------------------------------------------------------- Folgen
+
+    def undo_unfollow(self):
+        self._start_follow(list(self.last_unfollowed), is_undo=True)
+
+    def _start_follow(self, users, is_undo=False):
+        if not users or not self.client:
+            return
+        self._set_busy(True, "Folge Nutzern…", mode="determinate")
+        threading.Thread(
+            target=self._follow_worker, args=(list(users), is_undo), daemon=True
+        ).start()
+
+    def _follow_worker(self, users, is_undo):
+        succeeded = []
+        failed = 0
+        total = len(users)
+        rate_limited = None
+
+        for idx, user in enumerate(users, 1):
+            try:
+                ok, status_text = self.client.follow(user)
+            except RateLimitError as err:
+                rate_limited = err
+                for skipped in users[idx - 1:]:
+                    self._ui(self._set_row_status, skipped, "Übersprungen (Rate-Limit)")
+                break
+            except requests.RequestException:
+                ok, status_text = False, "Netzwerkfehler"
+
+            if ok:
+                succeeded.append(user)
+                self._ui(self._mark_followed, user)
+            else:
+                failed += 1
+
+            self._ui(self._set_row_status, user, status_text)
+            self._ui(self.progress.set, idx / total)
+            self._ui(self.status_label.configure, text=f"Folge Nutzern… {idx}/{total}")
+            time.sleep(ACTION_DELAY)
+
+        self._ui(self._finish_follow, succeeded, failed, rate_limited, is_undo)
+
+    def _finish_follow(self, succeeded, failed, rate_limited, is_undo):
+        if is_undo and succeeded:
+            self._hide_undo_button()
+        self.unfollow_candidates = self._compute_candidates()
+        self._update_stats()
+
+        parts = [f"{len(succeeded)} gefolgt"]
+        if failed:
+            parts.append(f"{failed} fehlgeschlagen")
+        self._set_busy(False, "Fertig: " + ", ".join(parts) + ".")
+
         if rate_limited:
             self._show_rate_limit_message(rate_limited)
 
     # ------------------------------------------------------------- Export
 
     def export_csv(self):
-        rows = self.rows[self.current_tab]
+        rows = self._visible_rows()
         if not rows:
             messagebox.showinfo(
                 "Keine Daten",

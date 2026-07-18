@@ -1,12 +1,14 @@
 # 🐙 GitHub Follower Checker
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![CI](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/0xGI0/GitHub-Follower-Checker?style=flat)](https://github.com/0xGI0/GitHub-Follower-Checker/stargazers)
 
 Desktop-Tool zum Analysieren deiner **GitHub-Follower/Following-Beziehungen** – mit moderner
 CustomTkinter-Oberfläche, sortierbarer Ergebnistabelle, CSV-Export und optionalem
-**Entfolgen** von Nutzern, die dir nicht zurückfolgen.
+**Entfolgen**: alle Nutzer, die dir nicht zurückfolgen, auf einen Klick – oder
+gezielt einzelne ausgewählte Nutzer.
 
 ---
 
@@ -22,12 +24,14 @@ CustomTkinter-Oberfläche, sortierbarer Ergebnistabelle, CSV-Export und optional
 * **HiDPI-tauglich**: Display-Skalierung wird automatisch erkannt,
   Zoom (100–200 %) per Dropdown einstellbar – Zoom und Theme werden lokal
   gespeichert (`~/.config/github-follower-checker/`, keine Zugangsdaten)
-* **Sortierbare Ergebnistabelle** mit drei Ansichten:
+* **Sortierbare Ergebnistabelle** mit vier Ansichten:
   + Folgen nicht zurück
+  + Fans (folgen dir, du folgst ihnen nicht)
   + Follower
   + Following
   + Klick auf eine Spaltenüberschrift sortiert auf-/absteigend
-* **CSV-Export** der aktuellen Ansicht
+* **Suchfeld** zum Filtern der Tabelle nach Nutzernamen
+* **CSV-Export** der aktuellen (gefilterten) Ansicht
 * **Sichere Token-Eingabe**
   + Maskiertes Eingabefeld (einblendbar per Checkbox)
   + Token wird **nicht gespeichert und nicht geloggt** – es bleibt nur im Arbeitsspeicher
@@ -39,6 +43,18 @@ CustomTkinter-Oberfläche, sortierbarer Ergebnistabelle, CSV-Export und optional
   + GitHub-Rate-Limit wird erkannt und mit Uhrzeit der Freigabe angezeigt
   + Klare Hinweise bei ungültigem Token oder Netzwerkproblemen
 * **Entfolgen mit Sicherheitsabfrage** und Statusanzeige pro Nutzer
+  + **„Alle Nicht-Folgenden"**: entfolgt allen Nutzern, die dir nicht zurückfolgen
+  + **„Auswahl entfolgen"**: entfolgt nur den in der Tabelle markierten Nutzern –
+    in jeder Ansicht, Mehrfachauswahl per Strg-/Shift-Klick
+  + **„↩ Rückgängig"**: folgt den gerade entfolgten Nutzern mit einem Klick wieder
+* **Whitelist**: Nutzer per Rechtsklick **schützen** (🛡) –
+  „Alle Nicht-Folgenden" überspringt sie dann
+* **Rechtsklick-Menü & Doppelklick**: Profil im Browser öffnen,
+  folgen (z. B. Fans zurückfolgen), entfolgen oder schützen
+* **Verlauf**: Die Sidebar zeigt nach jeder Analyse, wer dir seit dem
+  letzten Lauf **neu folgt oder entfolgt ist** (lokal gespeichert, nur Nutzernamen)
+* **Fenstergröße wird gemerkt** – inklusive Workaround für Window-Manager,
+  die das Fenster beim Start auf die Mindestgröße stauchen (HiDPI)
 
 ---
 
@@ -84,9 +100,15 @@ dadurch funktioniert auch der Start per **Doppelklick** (Windows, Mac, Linux).
 1. GitHub-Username eintragen
 2. Personal Access Token einfügen (maskiert, wird nirgends gespeichert)
 3. **„Analyse starten"** klicken – der Fortschritt wird live angezeigt
-4. Ergebnisse in der Tabelle prüfen, bei Bedarf sortieren oder als **CSV exportieren**
-5. Optional: **„Entfolgen"** klicken – nach Bestätigungsdialog wird jedem Nutzer
-   aus der Ansicht „Folgen nicht zurück" entfolgt, mit Status pro Nutzer
+4. Ergebnisse in der Tabelle prüfen, bei Bedarf sortieren, filtern oder als
+   **CSV exportieren** – Rechtsklick auf eine Zeile öffnet das Aktionsmenü,
+   Doppelklick öffnet das GitHub-Profil im Browser
+5. Optional entfolgen – zwei Wege, jeweils mit Bestätigungsdialog und Status pro Nutzer:
+   * **„Alle Nicht-Folgenden"** entfolgt allen Nutzern aus der Ansicht
+     „Folgen nicht zurück" (🛡-geschützte Nutzer werden übersprungen)
+   * **„Auswahl entfolgen"** entfolgt nur den markierten Nutzern – einfach in
+     einer beliebigen Ansicht Zeilen anklicken (Strg-/Shift-Klick für mehrere)
+   * Versehentlich entfolgt? **„↩ Rückgängig"** folgt dem letzten Schwung wieder
 
 ### 💻 CLI-Version
 
@@ -109,6 +131,8 @@ die dir nicht zurückfolgen, und fragt vor dem Entfolgen nach Bestätigung (`ja`
   es muss bei jedem Start neu eingegeben werden.
 * Nutze wenn möglich einen **separaten Token** nur für dieses Tool.
 * Exportierte CSV-Dateien enthalten Nutzernamen – `.gitignore` schließt `*.csv` bereits aus.
+* Der Analyse-Verlauf (`~/.config/github-follower-checker/history.json`) und die
+  Whitelist enthalten **nur Nutzernamen**, niemals Token oder andere Zugangsdaten.
 * Das Tool respektiert GitHub-Rate-Limits durch Pausen zwischen Requests und
   zeigt bei Erreichen des Limits an, ab wann es weitergeht.
 
@@ -123,6 +147,19 @@ die dir nicht zurückfolgen, und fragt vor dem Entfolgen nach Bestätigung (`ja`
 | „GitHub-API-Fehler (HTTP 404)" | Username prüfen – existiert der Account? |
 | „Keine Verbindung zur GitHub-API" | Internetverbindung / Firewall prüfen |
 | GUI startet nicht | `pip install -r requirements.txt` ausführen und im Terminal starten |
+
+---
+
+## 🧪 Entwicklung
+
+```bash
+pip install -e ".[dev]"
+ruff check .   # Lint
+pytest         # Tests (der GUI-Test benötigt ein Display, CI nutzt Xvfb)
+```
+
+Bei jedem Push laufen Lint, Syntax-Check und Tests automatisch per
+**GitHub Actions** (siehe CI-Badge oben).
 
 ---
 
