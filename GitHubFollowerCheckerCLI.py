@@ -18,7 +18,7 @@ import time
 
 import requests
 
-from GitHubFollowerCheckerGUI import (
+from gfc_core import (
     ACTION_DELAY,
     AuthError,
     GitHubClient,
