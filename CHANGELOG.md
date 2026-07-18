@@ -4,6 +4,13 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/),
 die Versionierung an [SemVer](https://semver.org/lang/de/).
 
+## [Unveröffentlicht]
+
+### Geändert
+
+- Pause zwischen Folgen/Entfolgen-Requests von 1 s auf 2 s erhöht –
+  konservativer gegenüber GitHubs Sekundär-Rate-Limits
+
 ## [1.2.0] – 2026-07-18
 
 ### Hinzugefügt
