@@ -377,6 +377,8 @@ class AppController:
     # ----------------------------------------------------------- Analyse
 
     def start_analysis(self, username, token):
+        if self.busy:
+            return
         self._pending_token = token
         self._set_busy(True, tr("Validiere Zugangsdaten…"))
         threading.Thread(
@@ -434,6 +436,8 @@ class AppController:
     # --------------------------------------------------------- Entfolgen
 
     def start_unfollow(self, users):
+        if self.busy:
+            return
         self._set_busy(True, tr("Entfolge Nutzer…"), determinate=True)
         threading.Thread(
             target=self._unfollow_worker, args=(list(users),), daemon=True
@@ -467,7 +471,8 @@ class AppController:
             self.ui.status(
                 tr("Entfolge Nutzer… {idx}/{total}").format(idx=idx, total=total)
             )
-            time.sleep(ACTION_DELAY)
+            if idx < total:
+                time.sleep(ACTION_DELAY)
 
         self._finish_unfollow(succeeded, failed, rate_limited)
 
@@ -492,7 +497,7 @@ class AppController:
         self.start_follow(list(self.last_unfollowed), is_undo=True)
 
     def start_follow(self, users, is_undo=False):
-        if not users or not self.client:
+        if self.busy or not users or not self.client:
             return
         self._set_busy(True, tr("Folge Nutzern…"), determinate=True)
         threading.Thread(
@@ -527,7 +532,8 @@ class AppController:
             self.ui.status(
                 tr("Folge Nutzern… {idx}/{total}").format(idx=idx, total=total)
             )
-            time.sleep(ACTION_DELAY)
+            if idx < total:
+                time.sleep(ACTION_DELAY)
 
         self._finish_follow(succeeded, failed, rate_limited, is_undo)
 
