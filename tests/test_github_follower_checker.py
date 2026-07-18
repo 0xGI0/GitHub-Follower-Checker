@@ -359,7 +359,7 @@ def test_gui_end_to_end(gui, tmp_path, monkeypatch):
         assert "bob" not in app.following
         assert app.tree.set("bob", "status") == "✓ Entfolgt"
         assert app.tree.set("bob", "you_follow") == "–"
-        assert app.undo_button.winfo_ismapped()
+        assert app.undo_button.winfo_manager() == "pack"
         assert "(2)" in app.undo_button.cget("text")
 
         # Rückgängig folgt beiden wieder
@@ -370,6 +370,6 @@ def test_gui_end_to_end(gui, tmp_path, monkeypatch):
         assert app.tree.set("bob", "status") == "✓ Gefolgt"
         assert app.tree.set("bob", "you_follow") == "✓"
         app.update()
-        assert not app.undo_button.winfo_ismapped()
+        assert app.undo_button.winfo_manager() == ""
     finally:
         app.destroy()
