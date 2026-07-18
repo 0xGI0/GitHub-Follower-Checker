@@ -15,6 +15,9 @@ import requests
 
 REPO = Path(__file__).resolve().parents[1]
 
+# Tests prüfen deutsche UI-Texte – Sprache unabhängig vom System pinnen
+os.environ.setdefault("GFC_LANG", "de")
+
 
 @pytest.fixture(scope="session")
 def gui():
@@ -157,6 +160,25 @@ def test_history_corrupt_file(gui, tmp_path, monkeypatch):
     path.write_text("kein json", encoding="utf-8")
     monkeypatch.setattr(gui, "HISTORY_PATH", path)
     assert gui._load_history() == {}
+
+
+def test_language_detection(gui, monkeypatch):
+    assert gui._detect_language({"language": "en"}) == "en"
+    assert gui._detect_language({"language": "de"}) == "de"
+    monkeypatch.setenv("GFC_LANG", "en")
+    assert gui._detect_language({}) == "en"
+
+
+def test_translation_lookup(gui, monkeypatch):
+    assert gui.tr("Analyse starten") == "Analyse starten"  # de gepinnt
+    monkeypatch.setattr(gui, "_LANG", "en")
+    assert gui.tr("Analyse starten") == "Start analysis"
+    assert gui.tr("✓ Entfolgt") == "✓ Unfollowed"
+    assert gui.tr("unbekannter Schlüssel") == "unbekannter Schlüssel"
+
+
+def test_translations_nonempty(gui):
+    assert all(value.strip() for value in gui._EN.values())
 
 
 def test_history_normalizes_old_format(gui):
