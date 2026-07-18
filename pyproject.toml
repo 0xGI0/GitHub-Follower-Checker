@@ -12,6 +12,7 @@ requires-python = ">=3.9"
 dependencies = [
     "requests>=2.31.0",
     "customtkinter>=5.2.2",
+    "keyring>=24",
 ]
 
 [project.urls]
@@ -21,17 +22,25 @@ Repository = "https://github.com/0xGI0/GitHub-Follower-Checker"
 dev = [
     "pytest>=7",
     "ruff>=0.4",
+    "mypy>=1.8",
 ]
 
 [project.gui-scripts]
 github-follower-checker = "GitHubFollowerCheckerGUI:main"
 
+[project.scripts]
+github-follower-checker-cli = "GitHubFollowerCheckerCLI:main"
+
 [tool.setuptools]
-py-modules = ["GitHubFollowerCheckerGUI"]
+py-modules = ["GitHubFollowerCheckerGUI", "GitHubFollowerCheckerCLI"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
