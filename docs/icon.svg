@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Dunkles Tile im GitHub-Look -->
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="#0d1117"/>
+  <rect x="8" y="8" width="496" height="496" rx="112" fill="none" stroke="#30363d" stroke-width="10"/>
+
+  <!-- Venn: Follower (blau) ∩ Following (grün) -->
+  <circle cx="196" cy="256" r="126" fill="#58a6ff"/>
+  <circle cx="316" cy="256" r="126" fill="#3fb950"/>
+
+  <!-- Schnittmenge (Linse) heller -->
+  <path d="M 256 145.3
+           A 126 126 0 0 1 256 366.7
+           A 126 126 0 0 1 256 145.3 Z"
+        fill="#e6edf3"/>
+
+  <!-- Haken in der Schnittmenge: gegenseitiges Folgen -->
+  <path d="M 232 258 L 250 278 L 284 234"
+        fill="none" stroke="#0d1117" stroke-width="22"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
