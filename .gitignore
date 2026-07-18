@@ -30,6 +30,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Test- und Lint-Caches
+.pytest_cache/
+.ruff_cache/
+
 # IDE
 .vscode/
 .idea/
