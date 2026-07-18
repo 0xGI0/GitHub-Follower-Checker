@@ -4,6 +4,7 @@
 Alle Tests – inklusive der Flet-View-Tests – laufen headless, ohne
 Display-Abhängigkeit.
 """
+import asyncio
 import importlib.util
 import json
 import os
@@ -762,11 +763,11 @@ def test_view_csv_export(viewmod, monkeypatch, core, tmp_path):
     target = tmp_path / "export.csv"
 
     class PickerStub:
-        def save_file(self, **kwargs):
+        async def save_file(self, **kwargs):
             return str(target)
 
     view.file_picker = PickerStub()
-    view.on_export()
+    asyncio.run(view.on_export())
     content = target.read_text(encoding="utf-8-sig")
     assert "username" in content.splitlines()[0]
     assert "erin" in content
@@ -777,5 +778,14 @@ def test_view_csv_export_without_data(viewmod, monkeypatch):
     view = make_view(viewmod, monkeypatch)
     alerts = []
     monkeypatch.setattr(view, "_alert", lambda title, msg: alerts.append(title))
-    view.on_export()
+    asyncio.run(view.on_export())
     assert alerts == ["Keine Daten"]
+
+
+def test_filepicker_save_file_is_async():
+    """Schutz: on_export awaitet save_file – bricht, falls flet die API ändert."""
+    import inspect
+
+    import flet as ft
+
+    assert inspect.iscoroutinefunction(ft.FilePicker.save_file)

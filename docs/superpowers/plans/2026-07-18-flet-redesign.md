@@ -18,7 +18,7 @@
 - Tests pinnen die Sprache mit `GFC_LANG=de` (steht bereits in `tests/test_github_follower_checker.py`).
 - Token niemals loggen oder auf Platte schreiben – einzige Ausnahme: Keyring bei aktivem „Token merken“ (Service-Name `github-follower-checker`).
 - `~/.config/github-follower-checker/settings.json` und `history.json`: Pfad und Format unverändert (Keys: `zoom`, `appearance`, `language`, `whitelist`, `remember_token`, `last_username`; neu nur `window_size` statt `window_geometry`).
-- Flet-API-Fakten (am 2026-07-18 gegen flet 0.86.1 verifiziert): `ft.run(main)`; `page.show_dialog(dlg)` / `page.pop_dialog()`; FilePicker ist ein Service → `page.services.append(fp)`, `fp.save_file(...)` gibt `str | None` zurück; `ft.Dropdown` feuert `on_select` (NICHT `on_change`); `ft.Border.all/only`, `ft.BorderRadius.all/only`, `ft.Padding.symmetric/all` sind Klassenmethoden (die Kleinbuchstaben-Module `ft.border.only` etc. existieren NICHT mehr); `ft.BoxFit.COVER` (nicht `ImageFit`); Canvas via `import flet.canvas`; `ft.PopupMenuItem(content=..., on_click=...)` (kein `text=`-Parameter); Fenster über `page.window.width/height/min_width/min_height/prevent_close/on_event` mit `ft.WindowEventType.CLOSE`.
+- Flet-API-Fakten (am 2026-07-18 gegen flet 0.86.1 verifiziert): `ft.run(main)`; `page.show_dialog(dlg)` / `page.pop_dialog()`; FilePicker ist ein Service → `page.services.append(fp)`, `fp.save_file(...)` ist async und liefert awaited `str | None`; `ft.Dropdown` feuert `on_select` (NICHT `on_change`); `ft.Border.all/only`, `ft.BorderRadius.all/only`, `ft.Padding.symmetric/all` sind Klassenmethoden (die Kleinbuchstaben-Module `ft.border.only` etc. existieren NICHT mehr); `ft.BoxFit.COVER` (nicht `ImageFit`); Canvas via `import flet.canvas`; `ft.PopupMenuItem(content=..., on_click=...)` (kein `text=`-Parameter); Fenster über `page.window.width/height/min_width/min_height/prevent_close/on_event` mit `ft.WindowEventType.CLOSE`.
 
 ---
 
@@ -2608,11 +2608,11 @@ def test_view_csv_export(viewmod, monkeypatch, core, tmp_path):
     target = tmp_path / "export.csv"
 
     class PickerStub:
-        def save_file(self, **kwargs):
+        async def save_file(self, **kwargs):
             return str(target)
 
     view.file_picker = PickerStub()
-    view.on_export()
+    asyncio.run(view.on_export())
     content = target.read_text(encoding="utf-8-sig")
     assert "username" in content.splitlines()[0]
     assert "erin" in content
@@ -2623,7 +2623,7 @@ def test_view_csv_export_without_data(viewmod, monkeypatch):
     view = make_view(viewmod, monkeypatch)
     alerts = []
     monkeypatch.setattr(view, "_alert", lambda title, msg: alerts.append(title))
-    view.on_export()
+    asyncio.run(view.on_export())
     assert alerts == ["Keine Daten"]
 ```
 
@@ -2782,7 +2782,7 @@ Den Stub `refresh_sparkline` (Task 4) ersetzen:
 Den Stub `on_export` (Task 4) ersetzen:
 
 ```python
-    def on_export(self, e=None):
+    async def on_export(self, e=None):
         table = self.controller.csv_table(self.current_tab, self.filter_term)
         if len(table) <= 1:
             self._alert(
@@ -2790,8 +2790,10 @@ Den Stub `on_export` (Task 4) ersetzen:
                 tr("Starte zuerst eine Analyse – es gibt noch nichts zu exportieren."),
             )
             return
+        if self.file_picker is None:
+            return
         default_name = f"github_{self.current_tab}_{datetime.now():%Y-%m-%d}.csv"
-        path = self.file_picker.save_file(
+        path = await self.file_picker.save_file(
             dialog_title=tr("Ergebnis als CSV speichern"),
             file_name=default_name,
             allowed_extensions=["csv"],
