@@ -43,13 +43,14 @@ def _ensure_dependencies() -> None:
 _ensure_dependencies()
 
 import threading  # noqa: E402
+import webbrowser  # noqa: E402
 from typing import Optional, Set  # noqa: E402
 
 import flet as ft  # noqa: E402
 import flet.canvas as fcv  # noqa: E402
 
-# Hinweis: webbrowser kommt in Task 5 dazu, csv und datetime in Task 7 –
-# hier noch nicht importieren (ruff F401).
+# Hinweis: csv und datetime kommen in Task 7 dazu – hier noch nicht
+# importieren (ruff F401).
 
 try:
     import keyring  # noqa: E402
@@ -349,8 +350,37 @@ class FollowerCheckerView(UiCallbacks):
         )
 
     def build_main(self) -> ft.Container:
-        # Platzhalter – Task 5 baut Tabs, Filter und Nutzerliste hier auf.
         s = self.s
+        self.tab_buttons = {}
+        self.tab_labels = {}
+        pills = []
+        for key, label in TABS:
+            text = ft.Text(label, size=s(12), color=self.c["muted"])
+            pill = ft.Container(
+                content=text,
+                padding=ft.Padding.symmetric(horizontal=s(12), vertical=s(6)),
+                border_radius=s(15),
+                ink=True,
+                on_click=lambda e, k=key: self.on_tab(k),
+            )
+            self.tab_labels[key] = text
+            self.tab_buttons[key] = pill
+            pills.append(pill)
+
+        self.search_field = ft.TextField(
+            hint_text=tr("Nutzer filtern…"),
+            prefix_icon=ft.Icons.SEARCH,
+            width=s(200),
+            height=s(34),
+            text_size=s(12),
+            dense=True,
+            filled=True,
+            fill_color=self.c["card"],
+            border_color=self.c["border"],
+            focused_border_color=self.c["blue"],
+            border_radius=s(6),
+            on_change=self.on_search,
+        )
         self.export_button = ft.OutlinedButton(
             content=ft.Text(tr("⬇  CSV exportieren"), size=s(12), color=self.c["text"]),
             style=ft.ButtonStyle(
@@ -359,7 +389,172 @@ class FollowerCheckerView(UiCallbacks):
             ),
             on_click=self.on_export,
         )
-        return ft.Container(expand=True, bgcolor=self.c["bg"], padding=s(20))
+
+        self.header_box = ft.Container(content=self._build_list_header())
+        self.user_list = ft.ListView(controls=[], spacing=0, expand=True)
+        self.empty_text = ft.Text(
+            tr("Noch keine Daten.\nStarte links eine Analyse."),
+            size=s(14),
+            color=self.c["muted"],
+            text_align=ft.TextAlign.CENTER,
+        )
+        self.empty_box = ft.Container(
+            content=self.empty_text, alignment=ft.Alignment(0, 0), expand=True
+        )
+        table = ft.Container(
+            expand=True,
+            bgcolor=self.c["card"],
+            border=ft.Border.all(1, self.c["border"]),
+            border_radius=s(8),
+            content=ft.Column(
+                [
+                    self.header_box,
+                    ft.Container(
+                        expand=True,
+                        content=ft.Stack([self.user_list, self.empty_box]),
+                    ),
+                ],
+                spacing=0,
+                expand=True,
+            ),
+        )
+
+        # Platzhalter – Task 7 füllt das Profil-Panel
+        self.detail_card = ft.Container(visible=False)
+        # Platzhalter – Task 6 füllt die Aktionsleiste
+        self.bottom_bar = ft.Row([])
+
+        return ft.Container(
+            expand=True,
+            bgcolor=self.c["bg"],
+            padding=s(20),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Row(pills, spacing=s(4), expand=True),
+                            self.search_field,
+                            self.export_button,
+                        ],
+                        spacing=s(8),
+                    ),
+                    table,
+                    self.detail_card,
+                    self.bottom_bar,
+                ],
+                spacing=s(12),
+                expand=True,
+            ),
+        )
+
+    def _build_list_header(self) -> ft.Container:
+        s = self.s
+        col, reverse = self.controller.sort_state.get(self.current_tab, ("user", False))
+
+        def head(col_key, width=None, expand=False, center=False):
+            arrow = ("  ↓" if reverse else "  ↑") if col_key == col else ""
+            label = ft.Text(
+                COLUMN_TITLES[col_key] + arrow,
+                size=s(11),
+                weight=ft.FontWeight.BOLD,
+                color=self.c["muted"],
+            )
+            return ft.Container(
+                content=label,
+                width=width,
+                expand=expand,
+                alignment=ft.Alignment(0, 0) if center else None,
+                ink=True,
+                on_click=lambda e, k=col_key: self.on_sort(k),
+            )
+
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Container(width=s(36)),  # Checkbox-Spalte
+                    ft.Container(width=s(28)),  # Avatar-Spalte
+                    head("user", expand=True),
+                    head("follows_you", width=s(100), center=True),
+                    head("you_follow", width=s(100), center=True),
+                    head("status", width=s(170)),
+                    ft.Container(width=s(40)),  # ⋯-Spalte
+                ],
+                spacing=s(8),
+            ),
+            padding=ft.Padding.symmetric(horizontal=s(10), vertical=s(8)),
+            bgcolor=self.c["card"],
+            border=ft.Border.only(bottom=ft.BorderSide(1, self.c["border"])),
+            border_radius=ft.BorderRadius.only(top_left=s(8), top_right=s(8)),
+        )
+
+    def _row_menu(self, user) -> ft.Control:
+        # Platzhalter – Task 6 hängt hier das ⋯-Aktionsmenü ein
+        return ft.Container(width=self.s(40))
+
+    def _build_row(self, row: dict) -> ft.Container:
+        s = self.s
+        user = row["user"]
+        selected = user in self.selection
+        shield = "🛡 " if user in self.controller.whitelist else ""
+        checkbox = ft.Checkbox(
+            value=selected,
+            on_change=lambda e, u=user: self.on_select_row(u, e.control.value),
+        )
+        avatar = ft.Image(
+            src=f"https://github.com/{user}.png?size=64",
+            width=s(28),
+            height=s(28),
+            border_radius=s(14),
+            fit=ft.BoxFit.COVER,
+            error_content=ft.Icon(
+                ft.Icons.PERSON, size=s(18), color=self.c["muted"]
+            ),
+        )
+        name = ft.Text(
+            shield + user, size=s(13), color=self.c["text"], weight=ft.FontWeight.W_500
+        )
+        follows_cell = ft.Container(
+            content=self._check_mark(row["follows_you"]),
+            width=s(100),
+            alignment=ft.Alignment(0, 0),
+        )
+        you_follow_cell = ft.Container(
+            content=self._check_mark(row["you_follow"]),
+            width=s(100),
+            alignment=ft.Alignment(0, 0),
+        )
+        status_text = ft.Text(row["status"], size=s(12), color=self.c["muted"])
+        container = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Container(content=checkbox, width=s(36)),
+                    avatar,
+                    ft.Container(
+                        content=name,
+                        expand=True,
+                        ink=True,
+                        on_click=lambda e, u=user: self.on_open_profiles([u]),
+                        tooltip=tr("Profil im Browser öffnen"),
+                    ),
+                    follows_cell,
+                    you_follow_cell,
+                    ft.Container(content=status_text, width=s(170)),
+                    self._row_menu(user),
+                ],
+                spacing=s(8),
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.symmetric(horizontal=s(10), vertical=s(2)),
+            bgcolor=self.c["selected"] if selected else None,
+            border=ft.Border.only(bottom=ft.BorderSide(1, self.c["border"])),
+        )
+        self._row_refs[user] = {
+            "container": container,
+            "name": name,
+            "status": status_text,
+            "you_follow": you_follow_cell,
+        }
+        return container
 
     # ------------------------------------------------ Fenster & Lebenslauf
 
@@ -654,10 +849,77 @@ class FollowerCheckerView(UiCallbacks):
             self.rate_text.value = f"{tr('API-Limit')}: {remaining}/{limit}"
 
     def refresh_tabs(self):
-        pass  # Task 5
+        for key, pill in self.tab_buttons.items():
+            active = key == self.current_tab
+            pill.bgcolor = self.c["selected"] if active else None
+            pill.border = (
+                ft.Border.all(1, self.c["border"]) if active else None
+            )
+            self.tab_labels[key].color = self.c["text"] if active else self.c["muted"]
+            self.tab_labels[key].weight = (
+                ft.FontWeight.BOLD if active else ft.FontWeight.NORMAL
+            )
 
     def refresh_list(self):
-        pass  # Task 5
+        self._row_refs = {}
+        rows = self.controller.sorted_rows(self.current_tab, self.filter_term)
+        visible = {r["user"] for r in rows}
+        self.selection &= visible
+        if self.current_tab == "changes":
+            self.user_list.controls = [self._build_change_row(r) for r in rows]
+        else:
+            self.user_list.controls = [self._build_row(r) for r in rows]
+        self.header_box.content = self._build_list_header()
+        term = self.filter_term.strip()
+        self.user_list.visible = bool(rows)
+        self.empty_box.visible = not rows
+        self.empty_text.value = (
+            tr("Keine Treffer für „{term}“.").format(term=term)
+            if term
+            else tr("Noch keine Daten.\nStarte links eine Analyse.")
+        )
+
+    def _build_change_row(self, row: dict) -> ft.Container:
+        # Task 7 gestaltet den Verlauf als Timeline; bis dahin normale Zeile
+        return self._build_row(row)
+
+    def on_tab(self, key):
+        self.current_tab = key
+        self.refresh_tabs()
+        self.refresh_list()
+        self.refresh_buttons()
+        self._schedule_detail_update()
+        self._update()
+
+    def on_search(self, e):
+        self.filter_term = e.control.value or ""
+        self.refresh_list()
+        self._update()
+
+    def on_sort(self, col):
+        self.controller.sort_by(self.current_tab, col)
+        self.refresh_list()
+        self._update()
+
+    def on_select_row(self, user, selected):
+        if selected:
+            self.selection.add(user)
+        else:
+            self.selection.discard(user)
+        refs = self._row_refs.get(user)
+        if refs:
+            refs["container"].bgcolor = self.c["selected"] if selected else None
+        self.refresh_buttons()
+        self._schedule_detail_update()
+        self._update()
+
+    def _schedule_detail_update(self):
+        pass  # Task 7
+
+    @staticmethod
+    def on_open_profiles(users):
+        for user in users[:5]:
+            webbrowser.open(f"https://github.com/{user}")
 
     def refresh_buttons(self):
         pass  # Task 6
