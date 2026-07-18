@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: GitHubFollowerChecker-linux
+            sep: ":"
+          - os: windows-latest
+            asset: GitHubFollowerChecker.exe
+            sep: ";"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Binary bauen
+        run: >
+          pyinstaller --noconfirm --onefile --windowed
+          --name GitHubFollowerChecker
+          --collect-all customtkinter
+          --add-data "docs/icon.png${{ matrix.sep }}docs"
+          --icon docs/icon.ico
+          GitHubFollowerCheckerGUI.py
+
+      - name: Artefakt umbenennen (Linux)
+        if: runner.os == 'Linux'
+        run: mv dist/GitHubFollowerChecker "dist/${{ matrix.asset }}"
+
+      - name: An Release anhängen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset }}
+          generate_release_notes: true
