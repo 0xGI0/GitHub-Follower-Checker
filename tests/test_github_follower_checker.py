@@ -550,3 +550,62 @@ def test_view_analyze_requires_input(viewmod, monkeypatch):
     monkeypatch.setattr(view, "_alert", lambda title, msg: alerts.append((title, msg)))
     view.on_analyze()
     assert alerts and "Eingabe fehlt" in alerts[0][0]
+
+
+def demo_view(viewmod, monkeypatch):
+    """View mit eingespeisten Fake-Daten (ohne Netzwerk)."""
+    view = make_view(viewmod, monkeypatch)
+    view.controller.client = CtrlFakeClient()
+    view.controller.apply_results(
+        {"alice", "bob", "carol", "dave"}, {"bob", "carol", "erin", "frank"}
+    )
+    return view
+
+
+def test_view_list_shows_unfollowers(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    assert view.current_tab == "unfollower"
+    assert set(view._row_refs) == {"erin", "frank"}
+    assert view.stat_values["followers"].value == "4"
+    assert view.stat_values["fans"].value == "2"
+
+
+def test_view_tab_and_filter(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    view.on_tab("following")
+    assert set(view._row_refs) == {"bob", "carol", "erin", "frank"}
+    view.filter_term = "bo"
+    view.refresh_list()
+    assert set(view._row_refs) == {"bob"}
+    view.filter_term = "zzz"
+    view.refresh_list()
+    assert view.empty_box.visible is True
+    assert "zzz" in view.empty_text.value
+
+
+def test_view_sort_toggle(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    view.on_tab("following")
+    first = list(view._row_refs)[0]
+    assert first == "bob"
+    view.on_sort("user")  # war schon nach user aufsteigend → jetzt absteigend
+    assert list(view._row_refs)[0] == "frank"
+
+
+def test_view_selection_updates_state(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    view.on_select_row("erin", True)
+    assert view.selection == {"erin"}
+    view.on_select_row("erin", False)
+    assert view.selection == set()
+
+
+def test_view_whitelist_shield(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    view.controller.set_protected(["erin"], True)
+    assert view._row_refs["erin"]["name"].value.startswith("🛡 ")
