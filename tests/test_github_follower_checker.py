@@ -379,6 +379,19 @@ class ImmediateCtrlThread:
         self._target(*self._args, **self._kwargs)
 
 
+class _ImmediateThreadingModule:
+    """threading-Ersatz nur für gfc_controller (Thread → ImmediateCtrlThread).
+
+    Patcht die Namensbindung `controller_mod.threading` statt das echte
+    threading-Modul zu mutieren (monkeypatch.setattr(controller_mod.threading,
+    "Thread", ...) würde sonst global threading.Thread ersetzen und damit
+    auch threading.Timer kaputt machen, das die View fürs Profil-Panel-
+    Debounce nutzt – Timer.__init__ ruft intern Thread.__init__ auf).
+    """
+
+    Thread = ImmediateCtrlThread
+
+
 class AnalysisFakeClient:
     def __init__(self, username, token):
         self.username = username
@@ -401,7 +414,7 @@ def sync_controller(controller_mod, core, monkeypatch, tmp_path):
     # HISTORY_PATH IMMER umbiegen – die Worker-Tests schreiben sonst in die
     # echte Nutzer-History unter ~/.config
     monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
-    monkeypatch.setattr(controller_mod.threading, "Thread", ImmediateCtrlThread)
+    monkeypatch.setattr(controller_mod, "threading", _ImmediateThreadingModule)
     monkeypatch.setattr(controller_mod, "ACTION_DELAY", 0)
     monkeypatch.setattr(controller_mod, "_save_settings", lambda settings: None)
     ui = RecorderUi()
@@ -614,7 +627,7 @@ def test_view_whitelist_shield(viewmod, monkeypatch, core, tmp_path):
 def test_view_end_to_end(viewmod, controller_mod, core, monkeypatch, tmp_path):
     """Portierung des alten Tk-Smoke-Tests: Analyse → Entfolgen → Undo."""
     monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
-    monkeypatch.setattr(controller_mod.threading, "Thread", ImmediateCtrlThread)
+    monkeypatch.setattr(controller_mod, "threading", _ImmediateThreadingModule)
     monkeypatch.setattr(controller_mod, "ACTION_DELAY", 0)
     view = make_view(viewmod, monkeypatch)
     # Bestätigungsdialoge automatisch bestätigen (headless keine Page)
@@ -677,7 +690,7 @@ def test_view_menu_protect_toggles(viewmod, monkeypatch, core, tmp_path):
 def test_view_menu_targets_union(viewmod, controller_mod, core, monkeypatch, tmp_path):
     """⋯-Menü wirkt auf Auswahl ∪ angeklickte Zeile, gefiltert nach Aktion."""
     monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
-    monkeypatch.setattr(controller_mod.threading, "Thread", ImmediateCtrlThread)
+    monkeypatch.setattr(controller_mod, "threading", _ImmediateThreadingModule)
     monkeypatch.setattr(controller_mod, "ACTION_DELAY", 0)
     view = demo_view(viewmod, monkeypatch)
     monkeypatch.setattr(
@@ -697,3 +710,72 @@ def test_view_menu_targets_union(viewmod, controller_mod, core, monkeypatch, tmp
     view.on_select_row("alice", True)
     view.on_menu_follow("dave")
     assert {"alice", "dave"} <= view.controller.following
+
+
+def test_view_detail_panel(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    view._profile_cache["erin"] = {
+        "name": "Erin Beispiel",
+        "followers": 42,
+        "following": 7,
+        "created_at": "2019-04-01T00:00:00Z",
+        "bio": "Hallo Welt",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    }
+    view.selection = {"erin"}
+    view._schedule_detail_update()
+    assert view.detail_card.visible is True
+    assert "Erin Beispiel (@erin)" in view.detail_text.value
+    assert "42" in view.detail_text.value
+    assert "2019" in view.detail_text.value
+    view.selection = set()
+    view._schedule_detail_update()
+    assert view.detail_card.visible is False
+
+
+def test_view_change_rows_timeline(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    # zweite Analyse erzeugt Verlaufseinträge
+    view.controller.apply_results(
+        {"alice", "bob", "carol", "neu-nutzer"}, {"bob", "carol", "erin", "frank"}
+    )
+    view.on_tab("changes")
+    texts = " ".join(collect_texts(view.user_list))
+    assert "neu-nutzer" in texts
+    assert "dave" in texts
+
+
+def test_view_sparkline_appears(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    assert view.spark_canvas.visible is False  # erst eine Analyse
+    view.controller.apply_results({"alice", "bob"}, {"bob"})
+    assert view.spark_canvas.visible is True
+    assert len(view.spark_canvas.shapes) >= 2  # mind. 1 Linie + Endpunkt
+
+
+def test_view_csv_export(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    target = tmp_path / "export.csv"
+
+    class PickerStub:
+        def save_file(self, **kwargs):
+            return str(target)
+
+    view.file_picker = PickerStub()
+    view.on_export()
+    content = target.read_text(encoding="utf-8-sig")
+    assert "username" in content.splitlines()[0]
+    assert "erin" in content
+    assert "CSV gespeichert" in view.status_text.value
+
+
+def test_view_csv_export_without_data(viewmod, monkeypatch):
+    view = make_view(viewmod, monkeypatch)
+    alerts = []
+    monkeypatch.setattr(view, "_alert", lambda title, msg: alerts.append(title))
+    view.on_export()
+    assert alerts == ["Keine Daten"]

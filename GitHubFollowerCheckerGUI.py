@@ -42,15 +42,14 @@ def _ensure_dependencies() -> None:
 
 _ensure_dependencies()
 
+import csv  # noqa: E402
 import threading  # noqa: E402
 import webbrowser  # noqa: E402
+from datetime import datetime  # noqa: E402
 from typing import Optional, Set  # noqa: E402
 
 import flet as ft  # noqa: E402
 import flet.canvas as fcv  # noqa: E402
-
-# Hinweis: csv und datetime kommen in Task 7 dazu – hier noch nicht
-# importieren (ruff F401).
 
 try:
     import keyring  # noqa: E402
@@ -135,6 +134,7 @@ class FollowerCheckerView(UiCallbacks):
         self._profile_cache: dict = {}
         self._detail_timer: Optional[threading.Timer] = None
         self._last_delta = ""
+        self.file_picker = None
         self._build_controls()
 
     # ------------------------------------------------------------ Helfer
@@ -419,8 +419,23 @@ class FollowerCheckerView(UiCallbacks):
             ),
         )
 
-        # Platzhalter – Task 7 füllt das Profil-Panel
-        self.detail_card = ft.Container(visible=False)
+        # Profil-Panel: erscheint, wenn genau ein Nutzer ausgewählt ist
+        self.detail_avatar = ft.Image(
+            src="", width=s(40), height=s(40), border_radius=s(20), visible=False
+        )
+        self.detail_text = ft.Text("", size=s(12), color=self.c["text"])
+        self.detail_card = ft.Container(
+            visible=False,
+            bgcolor=self.c["card"],
+            border=ft.Border.all(1, self.c["border"]),
+            border_radius=s(8),
+            padding=s(12),
+            content=ft.Row(
+                [self.detail_avatar, self.detail_text],
+                spacing=s(10),
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
         self.tip_text = ft.Text(
             tr("Tipp: Checkboxen wählen mehrere Nutzer aus, ⋯ öffnet Aktionen."),
             size=s(11),
@@ -768,7 +783,33 @@ class FollowerCheckerView(UiCallbacks):
         self.status(tr("Sprache geändert – bitte starte die App neu."))
 
     def on_export(self, e=None):
-        pass  # Task 7
+        table = self.controller.csv_table(self.current_tab, self.filter_term)
+        if len(table) <= 1:
+            self._alert(
+                tr("Keine Daten"),
+                tr("Starte zuerst eine Analyse – es gibt noch nichts zu exportieren."),
+            )
+            return
+        if self.file_picker is None:
+            return
+        default_name = f"github_{self.current_tab}_{datetime.now():%Y-%m-%d}.csv"
+        path = self.file_picker.save_file(
+            dialog_title=tr("Ergebnis als CSV speichern"),
+            file_name=default_name,
+            allowed_extensions=["csv"],
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                csv.writer(f).writerows(table)
+        except OSError as err:
+            self._alert(
+                tr("Export fehlgeschlagen"),
+                tr("Datei konnte nicht gespeichert werden: {err}").format(err=err),
+            )
+            return
+        self.status(tr("CSV gespeichert: {path}").format(path=path))
 
     # ------------------------------------------------------------ Dialoge
 
@@ -864,6 +905,7 @@ class FollowerCheckerView(UiCallbacks):
         self.current_tab = "unfollower"
         self.selection.clear()
         self._profile_cache.clear()
+        self.detail_card.visible = False
         self.refresh_tabs()
         self.refresh_sparkline()
         self.data_changed()
@@ -951,8 +993,34 @@ class FollowerCheckerView(UiCallbacks):
         )
 
     def _build_change_row(self, row: dict) -> ft.Container:
-        # Task 7 gestaltet den Verlauf als Timeline; bis dahin normale Zeile
-        return self._build_row(row)
+        s = self.s
+        gained = row["status"].startswith("+")
+        icon = ft.Icon(
+            ft.Icons.ADD_CIRCLE if gained else ft.Icons.REMOVE_CIRCLE,
+            color=self.c["green"] if gained else self.c["red"],
+            size=s(16),
+        )
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Container(width=s(6)),
+                    icon,
+                    ft.Text(
+                        row["user"],
+                        size=s(13),
+                        color=self.c["text"],
+                        weight=ft.FontWeight.W_500,
+                    ),
+                    ft.Text(row["status"], size=s(12), color=self.c["muted"]),
+                ],
+                spacing=s(10),
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.symmetric(horizontal=s(10), vertical=s(8)),
+            border=ft.Border.only(bottom=ft.BorderSide(1, self.c["border"])),
+            ink=True,
+            on_click=lambda e, u=row["user"]: self.on_open_profiles([u]),
+        )
 
     def on_tab(self, key):
         self.current_tab = key
@@ -985,7 +1053,58 @@ class FollowerCheckerView(UiCallbacks):
         self._update()
 
     def _schedule_detail_update(self):
-        pass  # Task 7
+        if self._detail_timer is not None:
+            self._detail_timer.cancel()
+            self._detail_timer = None
+        usable = (
+            len(self.selection) == 1
+            and self.controller.client is not None
+            and hasattr(self.controller.client, "get_user")
+            and not self.controller.busy
+        )
+        if not usable:
+            self.detail_card.visible = False
+            return
+        user = next(iter(self.selection))
+        if user in self._profile_cache:
+            self._show_detail(user)
+        else:
+            self._detail_timer = threading.Timer(0.35, self._profile_worker, args=(user,))
+            self._detail_timer.daemon = True
+            self._detail_timer.start()
+
+    def _profile_worker(self, user):
+        self._detail_timer = None
+        try:
+            data = self.controller.client.get_user(user)
+        except Exception:
+            return  # Panel ist reiner Komfort – Fehler still ignorieren
+        self._profile_cache[user] = data
+        if self.selection == {user}:
+            self._show_detail(user)
+            self._update()
+
+    def _show_detail(self, user):
+        data = self._profile_cache[user]
+        name = data.get("name") or user
+        parts = [name if name == user else f"{name} (@{user})"]
+        parts.append(f"{data.get('followers', '?')} {tr('Follower')}")
+        parts.append(f"{data.get('following', '?')} {tr('Following')}")
+        created = str(data.get("created_at", ""))[:4]
+        if created:
+            parts.append(f"{tr('dabei seit')} {created}")
+        lines = ["  ·  ".join(parts)]
+        bio = (data.get("bio") or "").strip().replace("\n", " ")
+        if bio:
+            if len(bio) > 110:
+                bio = bio[:110] + "…"
+            lines.append(bio)
+        self.detail_text.value = "\n".join(lines)
+        avatar = str(data.get("avatar_url") or "")
+        if avatar:
+            self.detail_avatar.src = avatar + ("&s=96" if "?" in avatar else "?s=96")
+        self.detail_avatar.visible = bool(avatar)
+        self.detail_card.visible = True
 
     @staticmethod
     def on_open_profiles(users):
@@ -1065,7 +1184,31 @@ class FollowerCheckerView(UiCallbacks):
         self.undo_button.disabled = busy
 
     def refresh_sparkline(self):
-        pass  # Task 7
+        counts = self.controller.spark_counts[-30:]
+        if len(counts) < 2:
+            self.spark_canvas.visible = False
+            return
+        s = self.s
+        w, h, pad = s(250), s(36), s(5)
+        lo, hi = min(counts), max(counts)
+        span = (hi - lo) or 1
+        points = []
+        for i, value in enumerate(counts):
+            x = pad + i * (w - 2 * pad) / (len(counts) - 1)
+            y = h - pad - (value - lo) * (h - 2 * pad) / span
+            points.append((x, y))
+        stroke = ft.Paint(
+            color=self.c["blue"], stroke_width=2, style=ft.PaintingStyle.STROKE
+        )
+        fill = ft.Paint(color=self.c["blue"], style=ft.PaintingStyle.FILL)
+        shapes = [
+            fcv.Line(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1],
+                     paint=stroke)
+            for i in range(len(points) - 1)
+        ]
+        shapes.append(fcv.Circle(points[-1][0], points[-1][1], 3, paint=fill))
+        self.spark_canvas.shapes = shapes
+        self.spark_canvas.visible = True
 
     def refresh_all(self):
         self.refresh_tabs()
