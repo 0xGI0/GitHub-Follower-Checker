@@ -25,6 +25,8 @@ gezielt einzelne ausgewählte Nutzer.
 ## ✨ Features
 
 * **Moderne GUI** (CustomTkinter, Dark Mode als Standard, Light Mode umschaltbar)
+* **Zweisprachig (Deutsch/Englisch)**: folgt automatisch der Systemsprache,
+  umstellbar über das Sprachmenü unten links (Auto/DE/EN)
 * **HiDPI-tauglich**: Display-Skalierung wird automatisch erkannt,
   Zoom (100–200 %) per Dropdown einstellbar – Zoom und Theme werden lokal
   gespeichert (`~/.config/github-follower-checker/`, keine Zugangsdaten)
@@ -180,8 +182,11 @@ pytest         # Tests (der GUI-Test benötigt ein Display, CI nutzt Xvfb)
 ```
 
 Ein Git-Tag `v*` löst den Release-Workflow aus, der Windows- und
-Linux-Binaries baut und ans GitHub-Release anhängt. Änderungen stehen im
-[CHANGELOG](CHANGELOG.md).
+Linux-Binaries baut und ans GitHub-Release anhängt. Der Workflow „PyPI"
+(manuell auslösbar) veröffentlicht das Paket per Trusted Publishing –
+dafür einmalig auf pypi.org einen Trusted Publisher für dieses Repo
+anlegen (Workflow `publish-pypi.yml`, Environment `pypi`). Änderungen
+stehen im [CHANGELOG](CHANGELOG.md).
 
 Bei jedem Push laufen Lint, Syntax-Check und Tests automatisch per
 **GitHub Actions** (siehe CI-Badge oben).

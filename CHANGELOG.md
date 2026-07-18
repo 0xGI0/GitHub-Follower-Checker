@@ -4,6 +4,22 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/),
 die Versionierung an [SemVer](https://semver.org/lang/de/).
 
+## [1.2.0] – 2026-07-18
+
+### Hinzugefügt
+
+- **Zweisprachige Oberfläche (Deutsch/Englisch):** folgt der Systemsprache,
+  umstellbar über das neue Sprachmenü unten links (Auto/DE/EN) –
+  gilt für GUI und CLI
+- **PyPI-Workflow** (`publish-pypi.yml`, manuell auslösbar über
+  GitHub Actions mit Trusted Publishing)
+- Englischer Screenshot in der englischen README
+
+### Behoben
+
+- CI: mypy-Konfiguration an aktuelle mypy-Versionen angepasst
+  (`python_version 3.9` entfernt, `keyring`-Fallback typisiert)
+
 ## [1.1.0] – 2026-07-18
 
 ### Hinzugefügt
