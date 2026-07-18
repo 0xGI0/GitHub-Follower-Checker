@@ -143,7 +143,7 @@ class FollowerCheckerView(UiCallbacks):
         self._profile_cache: dict = {}
         self._detail_timer: Optional[threading.Timer] = None
         self._last_delta = ""
-        self.file_picker = None
+        self.file_picker: Optional[ft.FilePicker] = None
         self._build_controls()
 
     # ------------------------------------------------------------ Helfer
@@ -259,7 +259,7 @@ class FollowerCheckerView(UiCallbacks):
             ("fans", tr("Fans"), self.c["green"]),
             ("unfollower", tr("Folgen nicht zurück"), self.c["red"]),
         )
-        stat_cards = []
+        stat_cards: list[ft.Control] = []
         for key, title, color in stat_defs:
             value = ft.Text("–", size=s(22), weight=ft.FontWeight.BOLD, color=color)
             self.stat_values[key] = value
@@ -368,7 +368,7 @@ class FollowerCheckerView(UiCallbacks):
         s = self.s
         self.tab_buttons = {}
         self.tab_labels = {}
-        pills = []
+        pills: list[ft.Control] = []
         for key, label in _tabs():
             text = ft.Text(label, size=s(12), color=self.c["muted"])
             pill = ft.Container(
