@@ -1343,6 +1343,12 @@ class FollowerCheckerView(UiCallbacks):
             options=[ft.DropdownOption(key=v, text=v) for v in values],
             value=current,
             expand=True,
+            dense=True,
+            text_size=self.s(12),
+            content_padding=ft.Padding.symmetric(
+                horizontal=self.s(8), vertical=self.s(4)
+            ),
+            border_color=self.c["border"],
             on_select=on_select,
         )
 
