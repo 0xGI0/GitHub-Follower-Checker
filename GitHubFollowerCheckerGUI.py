@@ -32,11 +32,16 @@ __version__ = "1.2.0"
 def _ensure_dependencies() -> None:
     """Installiert fehlende Pakete, damit der Doppelklick-Start funktioniert."""
     missing = []
-    for package in ("customtkinter", "requests", "keyring"):
+    for import_name, pip_name in (
+        ("customtkinter", "customtkinter"),
+        ("requests", "requests"),
+        ("keyring", "keyring"),
+        ("PIL", "pillow"),
+    ):
         try:
-            __import__(package)
+            __import__(import_name)
         except ImportError:
-            missing.append(package)
+            missing.append(pip_name)
     if not missing:
         return
     print(f"📦 Installiere fehlende Pakete: {', '.join(missing)}")

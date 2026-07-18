@@ -1,3 +1,4 @@
 requests>=2.31.0
 customtkinter>=5.2.2
 keyring>=24
+pillow>=9
