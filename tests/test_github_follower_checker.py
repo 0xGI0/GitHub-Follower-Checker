@@ -803,6 +803,19 @@ def test_view_language_switch_live(viewmod, core, monkeypatch):
     assert view.settings["language"] == "en"
     view.on_language(SimpleNamespace(control=SimpleNamespace(value="DE")))
     assert view.tab_labels["unfollower"].value == "Folgen nicht zurück"
+    view.on_language(SimpleNamespace(control=SimpleNamespace(value="EN")))
+    assert view.status_text.value == "Ready. Enter your username and token."
+    assert view.delta_text.value == "No comparison available yet."
+
+
+def test_view_language_switch_after_analysis(viewmod, core, monkeypatch, tmp_path):
+    """Auch Status- und Delta-Zeile wechseln sofort die Sprache."""
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    monkeypatch.setattr(core, "_LANG", core._LANG)
+    view = demo_view(viewmod, monkeypatch)
+    view.on_language(SimpleNamespace(control=SimpleNamespace(value="EN")))
+    assert "First analysis saved" in view.delta_text.value
+    assert "2 users don't follow you back" in view.status_text.value
 
 
 def test_candidates_language_independent(controller_mod, monkeypatch, core):

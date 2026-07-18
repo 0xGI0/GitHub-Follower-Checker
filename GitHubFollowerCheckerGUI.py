@@ -796,7 +796,21 @@ class FollowerCheckerView(UiCallbacks):
         self.settings["language"] = {"DE": "de", "EN": "en"}.get(e.control.value, "auto")
         _save_settings(self.settings)
         set_language(_detect_language(self.settings))
+        self._last_delta = self.controller.refresh_language() or ""
         self._rebuild()
+        if not self.controller.busy:
+            if self.controller.client:
+                n = len(self.controller.unfollow_candidates)
+                if n:
+                    self.status(
+                        tr(
+                            "Analyse abgeschlossen: {n} Nutzer folgen dir nicht zurück."
+                        ).format(n=n)
+                    )
+                else:
+                    self.status(tr("Analyse abgeschlossen: Alle folgen dir zurück. 🎉"))
+            else:
+                self.status(tr("Bereit. Gib Username und Token ein."))
 
     async def on_export(self, e=None):
         table = self.controller.csv_table(self.current_tab, self.filter_term)
