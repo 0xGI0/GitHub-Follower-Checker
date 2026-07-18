@@ -213,6 +213,13 @@ def tr(text: str) -> str:
     return text
 
 
+def set_language(lang: str) -> None:
+    """Schaltet die UI-Sprache zur Laufzeit um ("de"/"en")."""
+    global _LANG
+    if lang in ("de", "en"):
+        _LANG = lang
+
+
 # Anzahl gespeicherter Analyse-Stände pro Nutzer
 HISTORY_LIMIT = 50
 
