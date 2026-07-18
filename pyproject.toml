@@ -36,7 +36,7 @@ py-modules = ["gfc_core", "gfc_controller", "GitHubFollowerCheckerGUI", "GitHubF
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.mypy]
 ignore_missing_imports = true

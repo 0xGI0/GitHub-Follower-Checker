@@ -24,13 +24,10 @@ jobs:
         run: ruff check .
 
       - name: Typen (mypy)
-        run: mypy GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py
+        run: mypy gfc_core.py gfc_controller.py GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py
 
       - name: Syntax-Check
-        run: python -m py_compile GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py
+        run: python -m py_compile gfc_core.py gfc_controller.py GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py
 
-      - name: Tests (pytest unter Xvfb)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
-          xvfb-run -a python -m pytest -q
+      - name: Tests (pytest)
+        run: python -m pytest -q
