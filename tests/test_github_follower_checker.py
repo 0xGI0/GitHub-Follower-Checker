@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import requests
@@ -789,3 +790,27 @@ def test_filepicker_save_file_is_async():
     import flet as ft
 
     assert inspect.iscoroutinefunction(ft.FilePicker.save_file)
+
+
+def test_view_language_switch_live(viewmod, core, monkeypatch):
+    """Sprachwechsel wirkt sofort – ohne Neustart."""
+    monkeypatch.setattr(core, "_LANG", core._LANG)  # Original nach Test wiederherstellen
+    view = make_view(viewmod, monkeypatch)
+    assert view.tab_labels["unfollower"].value == "Folgen nicht zurück"
+    view.on_language(SimpleNamespace(control=SimpleNamespace(value="EN")))
+    assert core._LANG == "en"
+    assert view.tab_labels["unfollower"].value == "Don't follow back"
+    assert view.settings["language"] == "en"
+    view.on_language(SimpleNamespace(control=SimpleNamespace(value="DE")))
+    assert view.tab_labels["unfollower"].value == "Folgen nicht zurück"
+
+
+def test_candidates_language_independent(controller_mod, monkeypatch, core):
+    """Bereits Entfolgte bleiben nach Sprachwechsel ausgeschlossen."""
+    monkeypatch.setattr(core, "_LANG", core._LANG)
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.apply_results({"a"}, {"erin", "frank"})
+    ctrl.mark_unfollowed("erin")
+    ctrl.set_row_status("erin", "✓ Entfolgt")
+    core.set_language("en")
+    assert ctrl.compute_candidates() == ["frank"]

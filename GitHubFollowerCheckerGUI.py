@@ -59,25 +59,34 @@ except Exception:  # keyring ist optional – ohne Backend einfach deaktivieren
 from gfc_core import (  # noqa: E402
     KEYRING_SERVICE,
     __version__,
+    _detect_language,
     _load_settings,
     _save_settings,
+    set_language,
     tr,
 )
 from gfc_controller import AppController, UiCallbacks  # noqa: E402
 
-TABS = (
-    ("unfollower", tr("Folgen nicht zurück")),
-    ("fans", tr("Fans")),
-    ("followers", tr("Follower")),
-    ("following", tr("Following")),
-    ("changes", tr("Verlauf")),
-)
-COLUMN_TITLES = {
-    "user": "Username",
-    "follows_you": tr("Folgt dir"),
-    "you_follow": tr("Du folgst"),
-    "status": "Status",
-}
+
+def _tabs():
+    return (
+        ("unfollower", tr("Folgen nicht zurück")),
+        ("fans", tr("Fans")),
+        ("followers", tr("Follower")),
+        ("following", tr("Following")),
+        ("changes", tr("Verlauf")),
+    )
+
+
+def _column_titles():
+    return {
+        "user": "Username",
+        "follows_you": tr("Folgt dir"),
+        "you_follow": tr("Du folgst"),
+        "status": "Status",
+    }
+
+
 ZOOM_STEPS = (1.0, 1.25, 1.5, 1.75, 2.0)
 
 # GitHub-Farbwelt (an Primer/github.com angelehnt)
@@ -360,7 +369,7 @@ class FollowerCheckerView(UiCallbacks):
         self.tab_buttons = {}
         self.tab_labels = {}
         pills = []
-        for key, label in TABS:
+        for key, label in _tabs():
             text = ft.Text(label, size=s(12), color=self.c["muted"])
             pill = ft.Container(
                 content=text,
@@ -524,7 +533,7 @@ class FollowerCheckerView(UiCallbacks):
         def head(col_key, width=None, expand=False, center=False):
             arrow = ("  ↓" if reverse else "  ↑") if col_key == col else ""
             label = ft.Text(
-                COLUMN_TITLES[col_key] + arrow,
+                _column_titles()[col_key] + arrow,
                 size=s(11),
                 weight=ft.FontWeight.BOLD,
                 color=self.c["muted"],
@@ -786,7 +795,8 @@ class FollowerCheckerView(UiCallbacks):
     def on_language(self, e):
         self.settings["language"] = {"DE": "de", "EN": "en"}.get(e.control.value, "auto")
         _save_settings(self.settings)
-        self.status(tr("Sprache geändert – bitte starte die App neu."))
+        set_language(_detect_language(self.settings))
+        self._rebuild()
 
     async def on_export(self, e=None):
         table = self.controller.csv_table(self.current_tab, self.filter_term)

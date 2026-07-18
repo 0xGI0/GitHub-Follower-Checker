@@ -146,7 +146,7 @@ class AppController:
         return [
             r["user"]
             for r in self.rows["unfollower"]
-            if r["status"] != tr("✓ Entfolgt") and r["user"] not in self.whitelist
+            if r["you_follow"] and r["user"] not in self.whitelist
         ]
 
     def unfollowable(self, users):
