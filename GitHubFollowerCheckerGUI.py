@@ -396,7 +396,7 @@ class FollowerCheckerView(UiCallbacks):
         self._prefill_credentials()
         page.update()
 
-    def on_window_event(self, e):
+    async def on_window_event(self, e):
         if e.type == ft.WindowEventType.CLOSE:
             try:
                 self.settings["window_size"] = [
@@ -407,7 +407,7 @@ class FollowerCheckerView(UiCallbacks):
                 pass
             self.settings["whitelist"] = sorted(self.controller.whitelist)
             _save_settings(self.settings)
-            self.page.window.destroy()
+            await self.page.window.destroy()
 
     def _rebuild(self):
         """Baut die Oberfläche nach Theme-/Zoomwechsel komplett neu auf."""
