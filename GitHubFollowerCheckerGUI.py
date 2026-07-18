@@ -69,8 +69,9 @@ KEYRING_SERVICE = "github-follower-checker"
 
 BASE_URL = "https://api.github.com"
 
-# Pause zwischen Folgen/Entfolgen-Requests (Rate-Limit-Schonung)
-ACTION_DELAY = 1.0
+# Pause zwischen Folgen/Entfolgen-Requests. Bewusst konservativ (30 Schreib-
+# Aktionen pro Minute), um GitHubs Sekundär-Rate-Limits sicher zu unterschreiten.
+ACTION_DELAY = 2.0
 
 # Nur Darstellungs-Einstellungen (Zoom, Theme, Sprache, Fenster, Whitelist) –
 # niemals Zugangsdaten!
