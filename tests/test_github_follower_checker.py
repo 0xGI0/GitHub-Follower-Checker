@@ -20,7 +20,15 @@ os.environ.setdefault("GFC_LANG", "de")
 
 
 @pytest.fixture(scope="session")
-def gui():
+def core():
+    sys.path.insert(0, str(REPO))
+    import gfc_core
+
+    return gfc_core
+
+
+@pytest.fixture(scope="session")
+def gui(core):
     spec = importlib.util.spec_from_file_location(
         "gui_under_test", REPO / "GitHubFollowerCheckerGUI.py"
     )
@@ -72,8 +80,8 @@ class FakeSession:
         return self._next("DELETE", url, **kwargs)
 
 
-def make_client(gui, responses):
-    client = gui.GitHubClient("demo-user", "demo-token")
+def make_client(core, responses):
+    client = core.GitHubClient("demo-user", "demo-token")
     client.session = FakeSession(responses)
     return client
 
@@ -81,56 +89,56 @@ def make_client(gui, responses):
 # ------------------------------------------------------------ GitHubClient
 
 
-def test_unfollow_success(gui):
-    client = make_client(gui, [FakeResponse(204)])
+def test_unfollow_success(core):
+    client = make_client(core, [FakeResponse(204)])
     assert client.unfollow("foo") == (True, "✓ Entfolgt")
-    assert client.session.calls == [("DELETE", f"{gui.BASE_URL}/user/following/foo")]
+    assert client.session.calls == [("DELETE", f"{core.BASE_URL}/user/following/foo")]
 
 
-def test_unfollow_error(gui):
-    client = make_client(gui, [FakeResponse(404)])
+def test_unfollow_error(core):
+    client = make_client(core, [FakeResponse(404)])
     assert client.unfollow("foo") == (False, "Fehler (HTTP 404)")
 
 
-def test_follow_success(gui):
-    client = make_client(gui, [FakeResponse(204)])
+def test_follow_success(core):
+    client = make_client(core, [FakeResponse(204)])
     assert client.follow("foo") == (True, "✓ Gefolgt")
-    assert client.session.calls == [("PUT", f"{gui.BASE_URL}/user/following/foo")]
+    assert client.session.calls == [("PUT", f"{core.BASE_URL}/user/following/foo")]
 
 
-def test_rate_limit_raises(gui):
+def test_rate_limit_raises(core):
     limited = FakeResponse(
         403,
         headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1750000000"},
     )
-    client = make_client(gui, [limited])
-    with pytest.raises(gui.RateLimitError) as excinfo:
+    client = make_client(core, [limited])
+    with pytest.raises(core.RateLimitError) as excinfo:
         client.unfollow("foo")
     assert excinfo.value.reset_time is not None
 
 
-def test_get_user(gui):
+def test_get_user(core):
     client = make_client(
-        gui, [FakeResponse(200, json_data={"login": "foo", "name": "Foo Bar"})]
+        core, [FakeResponse(200, json_data={"login": "foo", "name": "Foo Bar"})]
     )
     assert client.get_user("foo")["name"] == "Foo Bar"
-    assert client.session.calls == [("GET", f"{gui.BASE_URL}/users/foo")]
+    assert client.session.calls == [("GET", f"{core.BASE_URL}/users/foo")]
 
 
-def test_rate_limit_tracking(gui):
+def test_rate_limit_tracking(core):
     headers = {"X-RateLimit-Remaining": "4999", "X-RateLimit-Limit": "5000"}
-    client = make_client(gui, [FakeResponse(204, headers=headers)])
+    client = make_client(core, [FakeResponse(204, headers=headers)])
     client.unfollow("foo")
     assert (client.rate_remaining, client.rate_limit) == (4999, 5000)
 
 
-def test_fetch_all_users_paginates(gui):
+def test_fetch_all_users_paginates(core):
     pages = [
         FakeResponse(200, json_data=[{"login": "a"}, {"login": "b"}]),
         FakeResponse(200, json_data=[{"login": "c"}]),
         FakeResponse(200, json_data=[]),
     ]
-    client = make_client(gui, pages)
+    client = make_client(core, pages)
     assert client.fetch_all_users("users/demo-user/followers") == {"a", "b", "c"}
     assert len(client.session.calls) == 3
 
@@ -138,54 +146,54 @@ def test_fetch_all_users_paginates(gui):
 # ------------------------------------------------------- Verlauf & Delta
 
 
-def test_compute_follower_delta(gui):
-    gained, lost = gui.compute_follower_delta({"Alice", "bob"}, {"bob", "carol", "Zed"})
+def test_compute_follower_delta(core):
+    gained, lost = core.compute_follower_delta({"Alice", "bob"}, {"bob", "carol", "Zed"})
     assert gained == ["carol", "Zed"]
     assert lost == ["Alice"]
 
 
-def test_compute_follower_delta_unchanged(gui):
-    assert gui.compute_follower_delta({"a"}, {"a"}) == ([], [])
+def test_compute_follower_delta_unchanged(core):
+    assert core.compute_follower_delta({"a"}, {"a"}) == ([], [])
 
 
-def test_history_roundtrip(gui, tmp_path, monkeypatch):
-    monkeypatch.setattr(gui, "HISTORY_PATH", tmp_path / "history.json")
+def test_history_roundtrip(core, tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
     data = {"demo-user": {"timestamp": "2026-07-18T06:00:00", "followers": ["a"]}}
-    gui._save_history(data)
-    assert gui._load_history() == data
+    core._save_history(data)
+    assert core._load_history() == data
 
 
-def test_history_corrupt_file(gui, tmp_path, monkeypatch):
+def test_history_corrupt_file(core, tmp_path, monkeypatch):
     path = tmp_path / "history.json"
     path.write_text("kein json", encoding="utf-8")
-    monkeypatch.setattr(gui, "HISTORY_PATH", path)
-    assert gui._load_history() == {}
+    monkeypatch.setattr(core, "HISTORY_PATH", path)
+    assert core._load_history() == {}
 
 
-def test_language_detection(gui, monkeypatch):
-    assert gui._detect_language({"language": "en"}) == "en"
-    assert gui._detect_language({"language": "de"}) == "de"
+def test_language_detection(core, monkeypatch):
+    assert core._detect_language({"language": "en"}) == "en"
+    assert core._detect_language({"language": "de"}) == "de"
     monkeypatch.setenv("GFC_LANG", "en")
-    assert gui._detect_language({}) == "en"
+    assert core._detect_language({}) == "en"
 
 
-def test_translation_lookup(gui, monkeypatch):
-    assert gui.tr("Analyse starten") == "Analyse starten"  # de gepinnt
-    monkeypatch.setattr(gui, "_LANG", "en")
-    assert gui.tr("Analyse starten") == "Start analysis"
-    assert gui.tr("✓ Entfolgt") == "✓ Unfollowed"
-    assert gui.tr("unbekannter Schlüssel") == "unbekannter Schlüssel"
+def test_translation_lookup(core, monkeypatch):
+    assert core.tr("Analyse starten") == "Analyse starten"  # de gepinnt
+    monkeypatch.setattr(core, "_LANG", "en")
+    assert core.tr("Analyse starten") == "Start analysis"
+    assert core.tr("✓ Entfolgt") == "✓ Unfollowed"
+    assert core.tr("unbekannter Schlüssel") == "unbekannter Schlüssel"
 
 
-def test_translations_nonempty(gui):
-    assert all(value.strip() for value in gui._EN.values())
+def test_translations_nonempty(core):
+    assert all(value.strip() for value in core._EN.values())
 
 
-def test_history_normalizes_old_format(gui):
+def test_history_normalizes_old_format(core):
     old = {"timestamp": "2026-07-14T10:00:00", "followers": ["a"]}
-    assert gui._normalize_history_entries(old) == [old]
-    assert gui._normalize_history_entries([old]) == [old]
-    assert gui._normalize_history_entries(None) == []
+    assert core._normalize_history_entries(old) == [old]
+    assert core._normalize_history_entries([old]) == [old]
+    assert core._normalize_history_entries(None) == []
 
 
 # ------------------------------------------------------------------- CLI
@@ -283,10 +291,10 @@ class ImmediateThread:
     not os.environ.get("DISPLAY"),
     reason="Benötigt ein Display (lokal DISPLAY setzen, CI nutzt xvfb-run)",
 )
-def test_gui_end_to_end(gui, tmp_path, monkeypatch):
+def test_gui_end_to_end(gui, core, tmp_path, monkeypatch):
     monkeypatch.setattr(gui, "_load_settings", lambda: {"zoom": 1.0, "appearance": "Dark"})
     monkeypatch.setattr(gui, "_save_settings", lambda settings: None)
-    monkeypatch.setattr(gui, "HISTORY_PATH", tmp_path / "history.json")
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
     monkeypatch.setattr(gui, "ACTION_DELAY", 0.01)
     monkeypatch.setattr(gui.messagebox, "askyesno", lambda *a, **k: True)
     monkeypatch.setattr(gui.messagebox, "showinfo", lambda *a, **k: None)
@@ -310,7 +318,7 @@ def test_gui_end_to_end(gui, tmp_path, monkeypatch):
 
         # Verlauf: erste Analyse angekündigt, Datei geschrieben
         assert "Erste Analyse" in app.delta_label.cget("text")
-        assert "demo-user" in gui._load_history()
+        assert "demo-user" in core._load_history()
 
         # Zweite Analyse: Delta wird angezeigt
         app._apply_results(
