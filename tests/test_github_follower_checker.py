@@ -827,3 +827,14 @@ def test_candidates_language_independent(controller_mod, monkeypatch, core):
     ctrl.set_row_status("erin", "✓ Entfolgt")
     core.set_language("en")
     assert ctrl.compute_candidates() == ["frank"]
+
+
+def test_controller_busy_guard(controller_mod, monkeypatch):
+    """Während ein Worker läuft, starten start_* keine zweiten Worker."""
+    ctrl, ui = make_controller(controller_mod, monkeypatch)
+    ctrl.client = CtrlFakeClient()
+    ctrl.busy = True
+    ctrl.start_analysis("demo-user", "tok")
+    ctrl.start_unfollow(["x"])
+    ctrl.start_follow(["x"])
+    assert ui.calls == []
