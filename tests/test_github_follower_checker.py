@@ -609,3 +609,66 @@ def test_view_whitelist_shield(viewmod, monkeypatch, core, tmp_path):
     view = demo_view(viewmod, monkeypatch)
     view.controller.set_protected(["erin"], True)
     assert view._row_refs["erin"]["name"].value.startswith("🛡 ")
+
+
+def test_view_end_to_end(viewmod, controller_mod, core, monkeypatch, tmp_path):
+    """Portierung des alten Tk-Smoke-Tests: Analyse → Entfolgen → Undo."""
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    monkeypatch.setattr(controller_mod.threading, "Thread", ImmediateCtrlThread)
+    monkeypatch.setattr(controller_mod, "ACTION_DELAY", 0)
+    view = make_view(viewmod, monkeypatch)
+    # Bestätigungsdialoge automatisch bestätigen (headless keine Page)
+    monkeypatch.setattr(
+        view, "_confirm", lambda title, q, label, on_confirm: on_confirm()
+    )
+    view.controller.client = CtrlFakeClient()
+    view.controller.apply_results(
+        {"alice", "bob", "carol", "dave"}, {"bob", "carol", "erin", "frank"}
+    )
+    assert view.stat_values["followers"].value == "4"
+    assert "Erste Analyse" in view.delta_text.value
+
+    # Whitelist schützt vor dem Bulk-Entfolgen
+    view.controller.set_protected(["erin"], True)
+    assert view.controller.unfollow_candidates == ["frank"]
+    view.controller.set_protected(["erin"], False)
+
+    # Auswahl entfolgen (zwei Mutuals)
+    view.on_tab("following")
+    view.on_select_row("bob", True)
+    view.on_select_row("carol", True)
+    assert "(2)" in view.unfollow_sel_label.value
+    assert view.unfollow_sel_button.disabled is False
+    view.on_unfollow_selection()
+    assert "Fertig: 2 entfolgt." in view.status_text.value
+    assert "bob" not in view.controller.following
+    assert view._row_refs["bob"]["status"].value == "✓ Entfolgt"
+    assert view.undo_button.visible is True
+    assert "(2)" in view.undo_label.value
+
+    # Rückgängig folgt beiden wieder
+    view.controller.undo_unfollow()
+    assert "Fertig: 2 gefolgt." in view.status_text.value
+    assert {"bob", "carol"} <= view.controller.following
+    assert view.undo_button.visible is False
+
+
+def test_view_unfollow_all_needs_client(viewmod, monkeypatch):
+    view = make_view(viewmod, monkeypatch)
+    view.controller.rows["unfollower"] = [
+        {"user": "x", "follows_you": False, "you_follow": True, "status": ""}
+    ]
+    view.controller.unfollow_candidates = ["x"]
+    alerts = []
+    monkeypatch.setattr(view, "_alert", lambda title, msg: alerts.append(title))
+    view.on_unfollow_all()
+    assert alerts == ["Keine Analyse"]
+
+
+def test_view_menu_protect_toggles(viewmod, monkeypatch, core, tmp_path):
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    view = demo_view(viewmod, monkeypatch)
+    view.on_menu_protect("erin")
+    assert "erin" in view.controller.whitelist
+    view.on_menu_protect("erin")
+    assert "erin" not in view.controller.whitelist

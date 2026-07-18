@@ -421,8 +421,57 @@ class FollowerCheckerView(UiCallbacks):
 
         # Platzhalter – Task 7 füllt das Profil-Panel
         self.detail_card = ft.Container(visible=False)
-        # Platzhalter – Task 6 füllt die Aktionsleiste
-        self.bottom_bar = ft.Row([])
+        self.tip_text = ft.Text(
+            tr("Tipp: Checkboxen wählen mehrere Nutzer aus, ⋯ öffnet Aktionen."),
+            size=s(11),
+            color=self.c["muted"],
+        )
+        self.undo_label = ft.Text(tr("↩ Rückgängig"), size=s(13), color=self.c["text"])
+        self.undo_button = ft.OutlinedButton(
+            content=self.undo_label,
+            visible=False,
+            style=ft.ButtonStyle(
+                side=ft.BorderSide(1, self.c["border"]),
+                shape=ft.RoundedRectangleBorder(radius=s(6)),
+            ),
+            on_click=lambda e: self.controller.undo_unfollow(),
+        )
+        self.unfollow_sel_label = ft.Text(
+            tr("Auswahl entfolgen"), size=s(13), color=self.c["red"]
+        )
+        self.unfollow_sel_button = ft.OutlinedButton(
+            content=self.unfollow_sel_label,
+            disabled=True,
+            style=ft.ButtonStyle(
+                side=ft.BorderSide(1, self.c["red_btn"]),
+                shape=ft.RoundedRectangleBorder(radius=s(6)),
+            ),
+            on_click=self.on_unfollow_selection,
+        )
+        self.unfollow_all_label = ft.Text(
+            tr("🚫 Alle Nicht-Folgenden"),
+            size=s(13),
+            weight=ft.FontWeight.BOLD,
+            color="#ffffff",
+        )
+        self.unfollow_all_button = ft.FilledButton(
+            content=self.unfollow_all_label,
+            disabled=True,
+            style=ft.ButtonStyle(
+                bgcolor=self.c["red_btn"],
+                shape=ft.RoundedRectangleBorder(radius=s(6)),
+            ),
+            on_click=self.on_unfollow_all,
+        )
+        self.bottom_bar = ft.Row(
+            [
+                ft.Container(content=self.tip_text, expand=True),
+                self.undo_button,
+                self.unfollow_sel_button,
+                self.unfollow_all_button,
+            ],
+            spacing=s(8),
+        )
 
         return ft.Container(
             expand=True,
@@ -488,8 +537,30 @@ class FollowerCheckerView(UiCallbacks):
         )
 
     def _row_menu(self, user) -> ft.Control:
-        # Platzhalter – Task 6 hängt hier das ⋯-Aktionsmenü ein
-        return ft.Container(width=self.s(40))
+        return ft.PopupMenuButton(
+            icon=ft.Icons.MORE_HORIZ,
+            icon_color=self.c["muted"],
+            items=[
+                ft.PopupMenuItem(
+                    content=ft.Text(tr("Profil im Browser öffnen")),
+                    on_click=lambda e, u=user: self.on_open_profiles(
+                        self._menu_targets(u)
+                    ),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Text(tr("Folgen")),
+                    on_click=lambda e, u=user: self.on_menu_follow(u),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Text(tr("Entfolgen")),
+                    on_click=lambda e, u=user: self.on_menu_unfollow(u),
+                ),
+                ft.PopupMenuItem(
+                    content=ft.Text(tr("🛡 Schützen / Schutz aufheben")),
+                    on_click=lambda e, u=user: self.on_menu_protect(u),
+                ),
+            ],
+        )
 
     def _build_row(self, row: dict) -> ft.Container:
         s = self.s
@@ -921,8 +992,77 @@ class FollowerCheckerView(UiCallbacks):
         for user in users[:5]:
             webbrowser.open(f"https://github.com/{user}")
 
+    def _menu_targets(self, user):
+        """Aktive Auswahl plus die angeklickte Zeile."""
+        return sorted(self.selection | {user})
+
+    def on_menu_follow(self, user):
+        targets = [
+            u for u in self._menu_targets(user) if u not in self.controller.following
+        ]
+        if targets and self.controller.client:
+            self.controller.start_follow(targets)
+
+    def on_menu_unfollow(self, user):
+        targets = self.controller.unfollowable(self._menu_targets(user))
+        if targets:
+            self._start_unfollow_flow(
+                targets, self.controller.selection_question(targets)
+            )
+
+    def on_menu_protect(self, user):
+        targets = self._menu_targets(user)
+        unprotected = [u for u in targets if u not in self.controller.whitelist]
+        # Erst alle schützen; sind bereits alle geschützt, Schutz aufheben
+        if unprotected:
+            self.controller.set_protected(unprotected, True)
+        else:
+            self.controller.set_protected(targets, False)
+
+    def on_unfollow_all(self, e=None):
+        users, question = self.controller.bulk_users_and_question()
+        self._start_unfollow_flow(users, question)
+
+    def on_unfollow_selection(self, e=None):
+        users = self.controller.unfollowable(sorted(self.selection))
+        if not users:
+            self._alert(
+                tr("Keine Auswahl"),
+                tr("Markiere in der Tabelle Nutzer, denen du aktuell folgst."),
+            )
+            return
+        self._start_unfollow_flow(users, self.controller.selection_question(users))
+
+    def _start_unfollow_flow(self, users, question):
+        if not self.controller.client:
+            self._alert(tr("Keine Analyse"), tr("Starte zuerst eine Analyse."))
+            return
+        if not users:
+            self._alert(tr("Nichts zu tun"), tr("Es gibt keine Nutzer zum Entfolgen."))
+            return
+        self._confirm(
+            tr("Entfolgen bestätigen"),
+            question + tr("\n\nDiese Aktion kann nicht rückgängig gemacht werden."),
+            tr("Entfolgen"),
+            lambda: self.controller.start_unfollow(users),
+        )
+
     def refresh_buttons(self):
-        pass  # Task 6
+        if not hasattr(self, "unfollow_all_label"):
+            return  # Sidebar-Aufbau läuft noch
+        busy = self.controller.busy
+        n = len(self.controller.unfollow_candidates)
+        bulk = tr("🚫 Alle Nicht-Folgenden")
+        self.unfollow_all_label.value = f"{bulk} ({n})" if n else bulk
+        self.unfollow_all_button.disabled = not n or busy
+        m = len(self.controller.unfollowable(sorted(self.selection)))
+        selected = tr("Auswahl entfolgen")
+        self.unfollow_sel_label.value = f"{selected} ({m})" if m else selected
+        self.unfollow_sel_button.disabled = not m or busy
+        k = len(self.controller.last_unfollowed)
+        self.undo_button.visible = bool(k)
+        self.undo_label.value = f"{tr('↩ Rückgängig')} ({k})"
+        self.undo_button.disabled = busy
 
     def refresh_sparkline(self):
         pass  # Task 7
