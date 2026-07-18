@@ -5,7 +5,9 @@ Die Logik-Tests laufen headless. Der GUI-Test benötigt ein Display –
 lokal reicht DISPLAY=:0, in der CI läuft er unter xvfb-run.
 """
 import importlib.util
+import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,14 @@ def gui():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(scope="session")
+def cli(gui):
+    sys.path.insert(0, str(REPO))
+    import GitHubFollowerCheckerCLI
+
+    return GitHubFollowerCheckerCLI
 
 
 class FakeResponse:
@@ -96,6 +106,21 @@ def test_rate_limit_raises(gui):
     assert excinfo.value.reset_time is not None
 
 
+def test_get_user(gui):
+    client = make_client(
+        gui, [FakeResponse(200, json_data={"login": "foo", "name": "Foo Bar"})]
+    )
+    assert client.get_user("foo")["name"] == "Foo Bar"
+    assert client.session.calls == [("GET", f"{gui.BASE_URL}/users/foo")]
+
+
+def test_rate_limit_tracking(gui):
+    headers = {"X-RateLimit-Remaining": "4999", "X-RateLimit-Limit": "5000"}
+    client = make_client(gui, [FakeResponse(204, headers=headers)])
+    client.unfollow("foo")
+    assert (client.rate_remaining, client.rate_limit) == (4999, 5000)
+
+
 def test_fetch_all_users_paginates(gui):
     pages = [
         FakeResponse(200, json_data=[{"login": "a"}, {"login": "b"}]),
@@ -132,6 +157,74 @@ def test_history_corrupt_file(gui, tmp_path, monkeypatch):
     path.write_text("kein json", encoding="utf-8")
     monkeypatch.setattr(gui, "HISTORY_PATH", path)
     assert gui._load_history() == {}
+
+
+def test_history_normalizes_old_format(gui):
+    old = {"timestamp": "2026-07-14T10:00:00", "followers": ["a"]}
+    assert gui._normalize_history_entries(old) == [old]
+    assert gui._normalize_history_entries([old]) == [old]
+    assert gui._normalize_history_entries(None) == []
+
+
+# ------------------------------------------------------------------- CLI
+
+
+class CLIFakeClient:
+    def __init__(self, username, token):
+        self.username = username
+        self.unfollowed = []
+
+    def validate_credentials(self):
+        pass
+
+    def fetch_all_users(self, endpoint):
+        if endpoint.endswith("/followers"):
+            return {"anna", "berta", "chris"}
+        return {"berta", "chris", "dora"}
+
+    def unfollow(self, user):
+        self.unfollowed.append(user)
+        return True, "✓ Entfolgt"
+
+
+def test_cli_json_output(cli, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "_load_settings", lambda: {})
+    rc = cli.main(["demo", "--token", "t", "--json"], client_factory=CLIFakeClient)
+    data = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert data["not_following_back"] == ["dora"]
+    assert data["fans"] == ["anna"]
+    assert data["followers"] == 3
+
+
+def test_cli_unfollow_respects_whitelist(cli, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "_load_settings", lambda: {"whitelist": ["dora"]})
+    monkeypatch.setattr(cli, "ACTION_DELAY", 0)
+    rc = cli.main(
+        ["demo", "--token", "t", "--unfollow", "--yes"], client_factory=CLIFakeClient
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "🛡 dora" in out
+    assert "Niemand zu entfolgen" in out
+
+
+def test_cli_unfollow_yes(cli, capsys, monkeypatch):
+    monkeypatch.setattr(cli, "_load_settings", lambda: {})
+    monkeypatch.setattr(cli, "ACTION_DELAY", 0)
+    rc = cli.main(
+        ["demo", "--token", "t", "--unfollow", "--yes", "--quiet"],
+        client_factory=CLIFakeClient,
+    )
+    assert rc == 0
+    assert "Fertig: 1 entfolgt, 0 Fehler." in capsys.readouterr().out
+
+
+def test_cli_requires_token(cli, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    rc = cli.main(["demo"], client_factory=CLIFakeClient)
+    assert rc == 2
+    assert "Kein Token" in capsys.readouterr().err
 
 
 # ------------------------------------------------------------- GUI-Smoke
@@ -204,6 +297,18 @@ def test_gui_end_to_end(gui, tmp_path, monkeypatch):
         app.update()
         assert "+1 Follower: neu-nutzer" in app.delta_label.cget("text")
         assert "−1 Follower: dave" in app.delta_label.cget("text")
+
+        # Verlauf-Tab und Sparkline speisen sich aus der Historie
+        assert any(
+            r["user"] == "dave" and "entfolgte dich" in r["status"]
+            for r in app.rows["changes"]
+        )
+        assert any(
+            r["user"] == "neu-nutzer" and "folgt dir seit" in r["status"]
+            for r in app.rows["changes"]
+        )
+        assert app._spark_counts == [4, 4]
+        assert app.spark_canvas.winfo_manager() == "pack"
 
         # Suche filtert die Tabelle
         app.segment.set("Following")
