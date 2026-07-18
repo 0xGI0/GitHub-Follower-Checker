@@ -1,4 +1,8 @@
+<p align="center"><img src="docs/icon.png" width="96" alt="App-Icon"></p>
+
 # 🐙 GitHub Follower Checker
+
+**Deutsch** · [English](README.en.md)
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml)
@@ -24,23 +28,30 @@ gezielt einzelne ausgewählte Nutzer.
 * **HiDPI-tauglich**: Display-Skalierung wird automatisch erkannt,
   Zoom (100–200 %) per Dropdown einstellbar – Zoom und Theme werden lokal
   gespeichert (`~/.config/github-follower-checker/`, keine Zugangsdaten)
-* **Sortierbare Ergebnistabelle** mit vier Ansichten:
+* **Sortierbare Ergebnistabelle** mit fünf Ansichten:
   + Folgen nicht zurück
   + Fans (folgen dir, du folgst ihnen nicht)
   + Follower
   + Following
+  + Verlauf (wer dir wann gefolgt/entfolgt ist)
   + Klick auf eine Spaltenüberschrift sortiert auf-/absteigend
 * **Suchfeld** zum Filtern der Tabelle nach Nutzernamen
 * **CSV-Export** der aktuellen (gefilterten) Ansicht
+* **Profil-Panel**: Bei Auswahl eines Nutzers erscheinen Avatar, Name,
+  Bio und Follower-Zahlen direkt unter der Tabelle
 * **Sichere Token-Eingabe**
   + Maskiertes Eingabefeld (einblendbar per Checkbox)
-  + Token wird **nicht gespeichert und nicht geloggt** – es bleibt nur im Arbeitsspeicher
+  + Token wird standardmäßig **nicht gespeichert und nicht geloggt** –
+    es bleibt nur im Arbeitsspeicher
+  + Optional: **„Token merken"** legt das Token verschlüsselt im
+    **System-Schlüsselbund** ab (`keyring`), niemals in einer Datei
 * **Reaktionsfähige Oberfläche**
   + Alle API-Abfragen laufen in einem Hintergrund-Thread
   + Ladeindikator und Live-Status während der Analyse
   + Fortschrittsbalken beim Entfolgen
 * **Verständliche Fehlermeldungen**
   + GitHub-Rate-Limit wird erkannt und mit Uhrzeit der Freigabe angezeigt
+  + Verbleibendes API-Kontingent wird in der Sidebar angezeigt
   + Klare Hinweise bei ungültigem Token oder Netzwerkproblemen
 * **Entfolgen mit Sicherheitsabfrage** und Statusanzeige pro Nutzer
   + **„Alle Nicht-Folgenden"**: entfolgt allen Nutzern, die dir nicht zurückfolgen
@@ -52,7 +63,9 @@ gezielt einzelne ausgewählte Nutzer.
 * **Rechtsklick-Menü & Doppelklick**: Profil im Browser öffnen,
   folgen (z. B. Fans zurückfolgen), entfolgen oder schützen
 * **Verlauf**: Die Sidebar zeigt nach jeder Analyse, wer dir seit dem
-  letzten Lauf **neu folgt oder entfolgt ist** (lokal gespeichert, nur Nutzernamen)
+  letzten Lauf **neu folgt oder entfolgt ist**, plus ein Mini-Diagramm des
+  Follower-Trends; der Tab „Verlauf" listet alle Ereignisse
+  (lokal gespeichert, nur Nutzernamen)
 * **Fenstergröße wird gemerkt** – inklusive Workaround für Window-Manager,
   die das Fenster beim Start auf die Mindestgröße stauchen (HiDPI)
 
@@ -60,7 +73,11 @@ gezielt einzelne ausgewählte Nutzer.
 
 ## 🧩 Setup
 
-**Voraussetzung:** Python 3.9+
+**Am einfachsten:** Fertige Programme (ohne Python) gibt es auf der
+[Releases-Seite](https://github.com/0xGI0/GitHub-Follower-Checker/releases) –
+einfach herunterladen und starten.
+
+**Aus dem Quellcode** (Python 3.9+):
 
 ```bash
 git clone https://github.com/0xGI0/GitHub-Follower-Checker.git
@@ -112,23 +129,26 @@ dadurch funktioniert auch der Start per **Doppelklick** (Windows, Mac, Linux).
 
 ### 💻 CLI-Version
 
-Für die Kommandozeile (ohne GUI):
+Für Terminal und Skripte – das Token kommt per `--token`, aus der
+Umgebungsvariable `GITHUB_TOKEN` oder wird sicher abgefragt (nie im Code):
 
 ```bash
-python GitHubUnfollowerToollong.py
+python GitHubFollowerCheckerCLI.py DEIN_USERNAME             # nur analysieren
+python GitHubFollowerCheckerCLI.py DEIN_USERNAME --json      # maschinenlesbar
+python GitHubFollowerCheckerCLI.py DEIN_USERNAME --unfollow  # entfolgen (mit Rückfrage)
+python GitHubFollowerCheckerCLI.py DEIN_USERNAME --unfollow --yes --quiet  # für Skripte
 ```
 
-Vorher im Skript `USERNAME` und `TOKEN` eintragen. Das Skript listet alle Nutzer,
-die dir nicht zurückfolgen, und fragt vor dem Entfolgen nach Bestätigung (`ja`/`nein`).
-
-> **Wichtig:** Die Datei mit eingetragenem Token **niemals committen oder hochladen**.
+Die CLI beachtet die 🛡-Whitelist der GUI, pausiert zwischen Requests und
+kennt außerdem `--version` und `--quiet`.
 
 ---
 
 ## 🔒 Sicherheit & Hinweise
 
-* **Kein Token committen!** Die GUI speichert das Token bewusst nicht –
-  es muss bei jedem Start neu eingegeben werden.
+* **Kein Token committen!** Die GUI speichert das Token standardmäßig nicht –
+  optional legt „Token merken" es im **System-Schlüsselbund** ab
+  (nie in einer Datei); abschalten löscht es wieder.
 * Nutze wenn möglich einen **separaten Token** nur für dieses Tool.
 * Exportierte CSV-Dateien enthalten Nutzernamen – `.gitignore` schließt `*.csv` bereits aus.
 * Der Analyse-Verlauf (`~/.config/github-follower-checker/history.json`) und die
@@ -155,8 +175,13 @@ die dir nicht zurückfolgen, und fragt vor dem Entfolgen nach Bestätigung (`ja`
 ```bash
 pip install -e ".[dev]"
 ruff check .   # Lint
+mypy GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py   # Typen
 pytest         # Tests (der GUI-Test benötigt ein Display, CI nutzt Xvfb)
 ```
+
+Ein Git-Tag `v*` löst den Release-Workflow aus, der Windows- und
+Linux-Binaries baut und ans GitHub-Release anhängt. Änderungen stehen im
+[CHANGELOG](CHANGELOG.md).
 
 Bei jedem Push laufen Lint, Syntax-Check und Tests automatisch per
 **GitHub Actions** (siehe CI-Badge oben).
