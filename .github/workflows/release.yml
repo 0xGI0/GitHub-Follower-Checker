@@ -16,6 +16,8 @@ jobs:
             asset: GitHubFollowerChecker-linux
           - os: windows-latest
             asset: GitHubFollowerChecker.exe
+          - os: macos-latest
+            asset: GitHubFollowerChecker-macos.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -29,11 +31,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt flet-cli pyinstaller
 
-      - name: Binary bauen
+      - name: Binary bauen (Linux/Windows)
+        if: runner.os != 'macOS'
         run: >
           flet pack GitHubFollowerCheckerGUI.py
           --name GitHubFollowerChecker
           --icon docs/icon.ico
+
+      # macOS: flet pack erzeugt ein .app-Bundle; als ZIP anhängen (.ico wird
+      # unter macOS nicht unterstützt, daher ohne --icon)
+      - name: App bauen (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          flet pack GitHubFollowerCheckerGUI.py --name GitHubFollowerChecker
+          ditto -c -k --keepParent dist/GitHubFollowerChecker.app "dist/${{ matrix.asset }}"
 
       - name: Artefakt umbenennen (Linux)
         if: runner.os == 'Linux'

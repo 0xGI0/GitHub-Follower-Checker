@@ -61,6 +61,8 @@ gezielt einzelne ausgewählte Nutzer.
   + **„Auswahl entfolgen"**: entfolgt nur den in der Tabelle markierten Nutzern –
     in jeder Ansicht per Checkbox in der Zeile auswählbar
   + **„↩ Rückgängig"**: folgt den gerade entfolgten Nutzern mit einem Klick wieder
+  + **„➕ Fans zurückfolgen"**: folgt allen Fans mit einem Klick zurück
+    (betrifft nur Nutzer, die dir bereits folgen)
 * **Whitelist**: Nutzer über das ⋯-Menü der Zeile **schützen** (🛡) –
   „Alle Nicht-Folgenden" überspringt sie dann
 * **⋯-Menü pro Zeile**: Profil im Browser öffnen,
@@ -183,8 +185,8 @@ mypy gfc_core.py gfc_controller.py GitHubFollowerCheckerGUI.py GitHubFollowerChe
 pytest         # Tests (laufen komplett headless, kein Display/Xvfb nötig)
 ```
 
-Ein Git-Tag `v*` löst den Release-Workflow aus, der Windows- und
-Linux-Binaries baut und ans GitHub-Release anhängt. Der Workflow „PyPI"
+Ein Git-Tag `v*` löst den Release-Workflow aus, der Windows-, Linux- und
+macOS-Binaries baut und ans GitHub-Release anhängt. Der Workflow „PyPI"
 (manuell auslösbar) veröffentlicht das Paket per Trusted Publishing –
 dafür einmalig auf pypi.org einen Trusted Publisher für dieses Repo
 anlegen (Workflow `publish-pypi.yml`, Environment `pypi`). Änderungen

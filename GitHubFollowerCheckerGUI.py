@@ -456,6 +456,18 @@ class FollowerCheckerView(UiCallbacks):
             size=s(11),
             color=self.c["muted"],
         )
+        self.follow_fans_label = ft.Text(
+            tr("➕ Fans zurückfolgen"), size=s(13), color=self.c["green"]
+        )
+        self.follow_fans_button = ft.OutlinedButton(
+            content=self.follow_fans_label,
+            disabled=True,
+            style=ft.ButtonStyle(
+                side=ft.BorderSide(1, self.c["green_btn"]),
+                shape=ft.RoundedRectangleBorder(radius=s(6)),
+            ),
+            on_click=self.on_follow_fans,
+        )
         self.undo_label = ft.Text(tr("↩ Rückgängig"), size=s(13), color=self.c["text"])
         self.undo_button = ft.OutlinedButton(
             content=self.undo_label,
@@ -496,6 +508,7 @@ class FollowerCheckerView(UiCallbacks):
         self.bottom_bar = ft.Row(
             [
                 ft.Container(content=self.tip_text, expand=True),
+                self.follow_fans_button,
                 self.undo_button,
                 self.unfollow_sel_button,
                 self.unfollow_all_button,
@@ -859,7 +872,7 @@ class FollowerCheckerView(UiCallbacks):
             )
         )
 
-    def _confirm(self, title, question, action_label, on_confirm):
+    def _confirm(self, title, question, action_label, on_confirm, color=None):
         if self.page is None:
             return
 
@@ -880,7 +893,7 @@ class FollowerCheckerView(UiCallbacks):
                     ),
                     ft.FilledButton(
                         content=ft.Text(action_label, color="#ffffff"),
-                        style=ft.ButtonStyle(bgcolor=self.c["red_btn"]),
+                        style=ft.ButtonStyle(bgcolor=color or self.c["red_btn"]),
                         on_click=confirmed,
                     ),
                 ],
@@ -1196,10 +1209,30 @@ class FollowerCheckerView(UiCallbacks):
             lambda: self.controller.start_unfollow(users),
         )
 
+    def fans_to_follow(self):
+        """Fans, denen aktuell noch nicht gefolgt wird."""
+        return [r["user"] for r in self.controller.rows["fans"] if not r["you_follow"]]
+
+    def on_follow_fans(self, e=None):
+        users = self.fans_to_follow()
+        if not users or not self.controller.client:
+            return
+        self._confirm(
+            tr("Folgen bestätigen"),
+            tr("{n} Fans zurückfolgen, die dir bereits folgen?").format(n=len(users)),
+            tr("Folgen"),
+            lambda: self.controller.start_follow(users),
+            color=self.c["green_btn"],
+        )
+
     def refresh_buttons(self):
         if not hasattr(self, "unfollow_all_label"):
             return  # Sidebar-Aufbau läuft noch
         busy = self.controller.busy
+        f = len(self.fans_to_follow())
+        fans = tr("➕ Fans zurückfolgen")
+        self.follow_fans_label.value = f"{fans} ({f})" if f else fans
+        self.follow_fans_button.disabled = not f or busy or not self.controller.client
         n = len(self.controller.unfollow_candidates)
         bulk = tr("🚫 Alle Nicht-Folgenden")
         self.unfollow_all_label.value = f"{bulk} ({n})" if n else bulk

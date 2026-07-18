@@ -6,6 +6,13 @@ die Versionierung an [SemVer](https://semver.org/lang/de/).
 
 ## [2.0.0] – 2026-07-18
 
+### Hinzugefügt
+- **Sofortiger Sprachwechsel:** Das DE/EN-Menü wirkt live – ohne Neustart.
+- **Fans zurückfolgen:** Ein Klick folgt allen Fans zurück (mit Bestätigung;
+  betrifft nur Nutzer, die dir bereits folgen).
+- **macOS-Build:** Releases enthalten jetzt auch ein macOS-App-Bundle (ZIP).
+- **Neues Logo** im GitHub-Look (Venn-Kreise mit Haken).
+
 ### Geändert
 - **Komplett neue Oberfläche:** GUI von CustomTkinter auf Flet umgestellt –
   GitHub-Look (Dark/Light), Stat-Karten, Tab-Pills, Nutzerliste mit Avataren

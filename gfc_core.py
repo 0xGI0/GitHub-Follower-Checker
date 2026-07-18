@@ -168,6 +168,9 @@ _EN = {
     "🛡 Schützen / Schutz aufheben": "🛡 Protect / unprotect",
     "Nutzer filtern…": "Filter users…",
     "Tipp: Checkboxen wählen mehrere Nutzer aus, ⋯ öffnet Aktionen.": "Tip: checkboxes select multiple users, ⋯ opens actions.",
+    "➕ Fans zurückfolgen": "➕ Follow fans back",
+    "Folgen bestätigen": "Confirm follow",
+    "{n} Fans zurückfolgen, die dir bereits folgen?": "Follow back {n} fans who already follow you?",
     # CLI
     "Analysiert GitHub-Follower/Following-Beziehungen und kann Nutzern entfolgen, die nicht zurückfolgen.": "Analyzes GitHub follower/following relationships and can unfollow users who don't follow back.",
     "GitHub-Username, der analysiert wird": "GitHub username to analyze",

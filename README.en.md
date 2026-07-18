@@ -47,6 +47,8 @@ one click, or precisely the users you select.
   + **"Auswahl entfolgen"** unfollows only the selected rows
     (select via the checkbox in each row)
   + **"↩ Rückgängig"** re-follows the users you just unfollowed
+  + **"➕ Fans zurückfolgen"** follows all fans back with one click
+    (only affects users who already follow you)
 * **Whitelist**: protect users via the ⋯ menu on each row (🛡) so bulk
   unfollow skips them
 * **⋯ menu on each row**: open profile in browser, follow
@@ -157,8 +159,8 @@ pytest         # tests (run fully headless, no display/Xvfb needed)
 ```
 
 Every push runs lint, type checks and tests via **GitHub Actions**.
-A `v*` git tag triggers the release workflow which builds Windows and
-Linux binaries. See the [CHANGELOG](CHANGELOG.md).
+A `v*` git tag triggers the release workflow which builds Windows, Linux
+and macOS binaries. See the [CHANGELOG](CHANGELOG.md).
 
 ---
 

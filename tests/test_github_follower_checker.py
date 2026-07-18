@@ -838,3 +838,21 @@ def test_controller_busy_guard(controller_mod, monkeypatch):
     ctrl.start_unfollow(["x"])
     ctrl.start_follow(["x"])
     assert ui.calls == []
+
+
+def test_view_follow_fans(viewmod, controller_mod, core, monkeypatch, tmp_path):
+    """Fans-zurückfolgen-Button folgt allen Fans nach Bestätigung."""
+    monkeypatch.setattr(core, "HISTORY_PATH", tmp_path / "history.json")
+    monkeypatch.setattr(controller_mod.threading, "Thread", ImmediateCtrlThread)
+    monkeypatch.setattr(controller_mod, "ACTION_DELAY", 0)
+    view = demo_view(viewmod, monkeypatch)
+    monkeypatch.setattr(
+        view, "_confirm", lambda title, q, label, on_confirm, color=None: on_confirm()
+    )
+    assert "(2)" in view.follow_fans_label.value  # alice und dave
+    assert view.follow_fans_button.disabled is False
+    view.on_follow_fans()
+    assert {"alice", "dave"} <= view.controller.following
+    assert "Fertig: 2 gefolgt." in view.status_text.value
+    view.refresh_buttons()
+    assert view.follow_fans_button.disabled is True
