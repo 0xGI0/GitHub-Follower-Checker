@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "github-follower-checker"
-version = "1.2.0"
+version = "2.0.0"
 description = "Desktop-Tool zum Analysieren von GitHub-Follower/Following-Beziehungen"
 readme = "README.md"
 license = { text = "MIT" }
