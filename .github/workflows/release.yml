@@ -14,7 +14,7 @@ jobs:
         include:
           - os: ubuntu-latest
             binary: GitHubFollowerChecker
-            asset: GitHubFollowerChecker-${{ github.ref_name }}-linux-x86_64
+            asset: GitHubFollowerChecker-${{ github.ref_name }}-linux-x86_64.tar.gz
           - os: windows-latest
             binary: GitHubFollowerChecker.exe
             asset: GitHubFollowerChecker-${{ github.ref_name }}-windows-x86_64.exe
@@ -48,8 +48,14 @@ jobs:
           flet pack GitHubFollowerCheckerGUI.py --name GitHubFollowerChecker
           ditto -c -k --keepParent dist/GitHubFollowerChecker.app "dist/${{ matrix.asset }}"
 
-      - name: Artefakt umbenennen (Linux/Windows)
-        if: runner.os != 'macOS'
+      # Linux: als tar.gz packen, damit das Executable-Bit erhalten bleibt
+      # (Release-Assets speichern selbst keine Dateirechte)
+      - name: Artefakt packen (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf "dist/${{ matrix.asset }}" -C dist "${{ matrix.binary }}"
+
+      - name: Artefakt umbenennen (Windows)
+        if: runner.os == 'Windows'
         run: mv "dist/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
 
       - name: An Release anhängen

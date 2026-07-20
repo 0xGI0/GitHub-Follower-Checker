@@ -79,8 +79,23 @@ gezielt einzelne ausgewählte Nutzer.
 ## 🧩 Setup
 
 **Am einfachsten:** Fertige Programme (ohne Python) gibt es auf der
-[Releases-Seite](https://github.com/0xGI0/GitHub-Follower-Checker/releases) –
-einfach herunterladen und starten.
+[Releases-Seite](https://github.com/0xGI0/GitHub-Follower-Checker/releases).
+Eine Installation ist nicht nötig – die Datei enthält alles und läuft direkt.
+
+**Linux** (`…-linux-x86_64.tar.gz`):
+
+```bash
+tar xzf GitHubFollowerChecker-*-linux-x86_64.tar.gz
+./GitHubFollowerChecker
+```
+
+**Windows** (`…-windows-x86_64.exe`): Datei doppelklicken. Beim ersten Start
+zeigt SmartScreen eine Warnung (die Binary ist nicht signiert) –
+„Weitere Informationen" → „Trotzdem ausführen".
+
+**macOS** (`…-macos-arm64.zip`): entpacken, `GitHubFollowerChecker.app` nach
+`/Programme` ziehen. Beim ersten Start per **Rechtsklick → Öffnen** starten,
+da die App nicht notarisiert ist.
 
 **Aus dem Quellcode** (Python 3.10+):
 
