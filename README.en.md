@@ -77,6 +77,44 @@ Only the official **GitHub REST API v3** is used.
 
 ---
 
+## 🔐 Verify your download
+
+Every release ships the **SHA-256 checksums** of all files – in the release
+notes ("Checksums" section) and as the asset `SHA256SUMS.txt`.
+Compute the hash of your downloaded file like this:
+
+**Windows (PowerShell):**
+
+```powershell
+Get-FileHash .\GitHubFollowerChecker-v2.0.0-windows-x86_64.exe -Algorithm SHA256
+```
+
+**Windows (CMD):**
+
+```bat
+certutil -hashfile GitHubFollowerChecker-v2.0.0-windows-x86_64.exe SHA256
+```
+
+**macOS/Linux:**
+
+```bash
+shasum -a 256 GitHubFollowerChecker-v2.0.0-linux-x86_64.tar.gz
+```
+
+If the value matches the one in the release notes, the file is unmodified
+and intact.
+
+Releases **after v2.0.0** additionally carry a **GitHub artifact
+attestation**: using the [GitHub CLI](https://cli.github.com/) you can prove
+the file was really built from this repository and commit via GitHub
+Actions (Sigstore):
+
+```bash
+gh attestation verify <file> --owner 0xGI0
+```
+
+---
+
 ## 🔑 Create a GitHub Personal Access Token (PAT)
 
 1. On GitHub open:
@@ -160,7 +198,9 @@ pytest         # tests (run fully headless, no display/Xvfb needed)
 
 Every push runs lint, type checks and tests via **GitHub Actions**.
 A `v*` git tag triggers the release workflow which builds Windows, Linux
-and macOS binaries. See the [CHANGELOG](CHANGELOG.md).
+and macOS binaries; it also generates `SHA256SUMS.txt` from the published
+assets and attests build provenance for every artifact automatically –
+no manual step required. See the [CHANGELOG](CHANGELOG.md).
 
 ---
 

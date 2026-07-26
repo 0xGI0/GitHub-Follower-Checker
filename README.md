@@ -109,6 +109,44 @@ Es wird ausschließlich die offizielle **GitHub REST API v3** verwendet.
 
 ---
 
+## 🔐 Download überprüfen (Verify your download)
+
+Jedes Release enthält die **SHA-256-Prüfsummen** aller Dateien – in den
+Release-Notes (Abschnitt „Checksums") und als Asset `SHA256SUMS.txt`.
+So berechnest du den Hash deiner heruntergeladenen Datei:
+
+**Windows (PowerShell):**
+
+```powershell
+Get-FileHash .\GitHubFollowerChecker-v2.0.0-windows-x86_64.exe -Algorithm SHA256
+```
+
+**Windows (CMD):**
+
+```bat
+certutil -hashfile GitHubFollowerChecker-v2.0.0-windows-x86_64.exe SHA256
+```
+
+**macOS/Linux:**
+
+```bash
+shasum -a 256 GitHubFollowerChecker-v2.0.0-linux-x86_64.tar.gz
+```
+
+Stimmt der angezeigte Wert mit dem in den Release-Notes überein, ist die
+Datei unverändert und intakt.
+
+Releases **nach v2.0.0** tragen zusätzlich eine **GitHub Artifact
+Attestation**: Mit dem [GitHub CLI](https://cli.github.com/) lässt sich
+beweisen, dass die Datei wirklich per GitHub Actions aus diesem Repository
+und Commit gebaut wurde (Sigstore):
+
+```bash
+gh attestation verify <Datei> --owner 0xGI0
+```
+
+---
+
 ## 🔑 GitHub Personal Access Token (PAT) erstellen
 
 1. Öffne auf GitHub:
@@ -201,7 +239,9 @@ pytest         # Tests (laufen komplett headless, kein Display/Xvfb nötig)
 ```
 
 Ein Git-Tag `v*` löst den Release-Workflow aus, der Windows-, Linux- und
-macOS-Binaries baut und ans GitHub-Release anhängt. Der Workflow „PyPI"
+macOS-Binaries baut und ans GitHub-Release anhängt; dabei werden automatisch
+`SHA256SUMS.txt` (aus den veröffentlichten Assets) erzeugt und alle
+Artefakte per Build-Provenance attestiert – kein manueller Schritt nötig. Der Workflow „PyPI"
 (manuell auslösbar) veröffentlicht das Paket per Trusted Publishing –
 dafür einmalig auf pypi.org einen Trusted Publisher für dieses Repo
 anlegen (Workflow `publish-pypi.yml`, Environment `pypi`). Änderungen
