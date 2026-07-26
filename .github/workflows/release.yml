@@ -4,8 +4,11 @@ on:
   push:
     tags: ["v*"]
 
+# id-token/attestations: für die Build-Provenance-Attestation (Sigstore)
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -58,8 +61,35 @@ jobs:
         if: runner.os == 'Windows'
         run: mv "dist/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
 
+      # GitHub bescheinigt, dass genau diese Datei aus diesem Repo/Commit
+      # gebaut wurde – prüfbar mit: gh attestation verify <datei> --owner 0xGI0
+      - name: Build-Provenance attestieren
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/${{ matrix.asset }}
+
       - name: An Release anhängen
         uses: softprops/action-gh-release@v3
         with:
           files: dist/${{ matrix.asset }}
           generate_release_notes: true
+
+  # Hashes werden von den ECHTEN, veröffentlichten Release-Assets berechnet
+  # (erst herunterladen, dann hashen) – nicht von den lokalen Build-Artefakten
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: SHA256SUMS.txt erzeugen und an Release + Notes anhängen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release download "$TAG" --repo "$REPO" --pattern 'GitHubFollowerChecker-*' --dir assets
+          (cd assets && sha256sum GitHubFollowerChecker-*) > SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --repo "$REPO" --clobber
+          # Notes: evtl. vorhandenen Checksums-Abschnitt ersetzen (idempotent)
+          gh release view "$TAG" --repo "$REPO" --json body -q .body | tr -d '\r' | sed '/^## Checksums$/,$d' > notes.md
+          printf '## Checksums\n\nSHA-256 (auch als Asset `SHA256SUMS.txt` angehängt / also attached as asset `SHA256SUMS.txt`):\n\n```\n%s\n```\n' "$(cat SHA256SUMS.txt)" >> notes.md
+          gh release edit "$TAG" --repo "$REPO" --notes-file notes.md
