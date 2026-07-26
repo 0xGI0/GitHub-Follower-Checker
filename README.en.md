@@ -113,6 +113,27 @@ Actions (Sigstore):
 gh attestation verify <file> --owner 0xGI0
 ```
 
+**PGP signature:** If a release ships `.asc` files, they are additionally
+signed with the author's PGP key. Import the public key once:
+
+```bash
+curl -O https://tertlidis.com/pgp.asc
+gpg --import pgp.asc
+```
+
+Then verify the signature:
+
+```bash
+gpg --verify <file>.asc <file>
+```
+
+Expected output: "Good signature from Georgios Tertlidis". The key
+fingerprint for cross-checking:
+
+```
+D251 773E 1DF7 0C1D 0476 1CB0 F92A F40D 80E8 5351
+```
+
 ---
 
 ## 🔑 Create a GitHub Personal Access Token (PAT)
@@ -199,8 +220,11 @@ pytest         # tests (run fully headless, no display/Xvfb needed)
 Every push runs lint, type checks and tests via **GitHub Actions**.
 A `v*` git tag triggers the release workflow which builds Windows, Linux
 and macOS binaries; it also generates `SHA256SUMS.txt` from the published
-assets and attests build provenance for every artifact automatically –
-no manual step required. See the [CHANGELOG](CHANGELOG.md).
+assets and attests build provenance for every artifact automatically.
+The only manual step per release: the owner downloads the published
+assets, signs them locally (`gpg --detach-sign --armor <file>`) and
+attaches the `.asc` files to the release – private keys stay strictly
+local, never in the repo or in Actions. See the [CHANGELOG](CHANGELOG.md).
 
 ---
 

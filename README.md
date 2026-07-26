@@ -145,6 +145,29 @@ und Commit gebaut wurde (Sigstore):
 gh attestation verify <Datei> --owner 0xGI0
 ```
 
+**PGP-Signatur:** Sofern `.asc`-Dateien am Release hängen, sind die Dateien
+zusätzlich mit dem PGP-Schlüssel des Autors signiert. Einmalig den
+öffentlichen Schlüssel importieren:
+
+```bash
+curl -O https://tertlidis.com/pgp.asc
+gpg --import pgp.asc
+```
+
+Dann die Signatur prüfen:
+
+```bash
+gpg --verify <Datei>.asc <Datei>
+```
+
+Erwartet wird „Good signature from Georgios Tertlidis" (bei deutscher
+Locale: „Korrekte Signatur von …"). Der Schlüssel-Fingerprint zum
+Gegenprüfen:
+
+```
+D251 773E 1DF7 0C1D 0476 1CB0 F92A F40D 80E8 5351
+```
+
 ---
 
 ## 🔑 GitHub Personal Access Token (PAT) erstellen
@@ -241,7 +264,11 @@ pytest         # Tests (laufen komplett headless, kein Display/Xvfb nötig)
 Ein Git-Tag `v*` löst den Release-Workflow aus, der Windows-, Linux- und
 macOS-Binaries baut und ans GitHub-Release anhängt; dabei werden automatisch
 `SHA256SUMS.txt` (aus den veröffentlichten Assets) erzeugt und alle
-Artefakte per Build-Provenance attestiert – kein manueller Schritt nötig. Der Workflow „PyPI"
+Artefakte per Build-Provenance attestiert. Einziger manueller Schritt pro
+Release: Der Owner lädt die veröffentlichten Assets herunter, signiert sie
+lokal (`gpg --detach-sign --armor <Datei>`) und hängt die `.asc`-Dateien
+mit ans Release – private Schlüssel bleiben ausschließlich lokal, niemals
+im Repo oder in Actions. Der Workflow „PyPI"
 (manuell auslösbar) veröffentlicht das Paket per Trusted Publishing –
 dafür einmalig auf pypi.org einen Trusted Publisher für dieses Repo
 anlegen (Workflow `publish-pypi.yml`, Environment `pypi`). Änderungen
