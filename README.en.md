@@ -134,6 +134,10 @@ fingerprint for cross-checking:
 D251 773E 1DF7 0C1D 0476 1CB0 F92A F40D 80E8 5351
 ```
 
+The gpg warning "This key is not certified with a trusted signature" is
+normal – it only means the key isn't marked as trusted in your keyring
+yet. That's exactly what the fingerprint comparison is for.
+
 ---
 
 ## 🔑 Create a GitHub Personal Access Token (PAT)

@@ -168,6 +168,11 @@ Gegenprüfen:
 D251 773E 1DF7 0C1D 0476 1CB0 F92A F40D 80E8 5351
 ```
 
+Die gpg-Warnung „Dieser Schlüssel trägt keine vertrauenswürdige Signatur"
+ist dabei normal – sie bedeutet nur, dass der Key in deinem Schlüsselbund
+noch nicht als vertrauenswürdig markiert ist. Genau dafür ist der
+Fingerprint-Vergleich da.
+
 ---
 
 ## 🔑 GitHub Personal Access Token (PAT) erstellen
