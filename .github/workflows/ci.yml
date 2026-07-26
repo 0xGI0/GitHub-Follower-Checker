@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least Privilege: CI liest nur den Code, mehr braucht kein Job
+permissions:
+  contents: read
+
 jobs:
   checks:
     runs-on: ubuntu-latest
