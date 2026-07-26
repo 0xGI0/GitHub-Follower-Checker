@@ -74,6 +74,28 @@ jobs:
           files: dist/${{ matrix.asset }}
           generate_release_notes: true
 
+  # SBOM (CycloneDX) der App-Abhängigkeiten: exakte Versionen aus einem
+  # frischen venv nur mit requirements.txt – Supply-Chain-Transparenz
+  sbom:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - name: SBOM erzeugen und an Release anhängen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -m venv appenv
+          appenv/bin/pip install -r requirements.txt
+          pip install cyclonedx-bom==7.3.1
+          cyclonedx-py environment appenv/bin/python --output-format JSON --output-file "sbom-${{ github.ref_name }}.cdx.json"
+          gh release upload "${{ github.ref_name }}" "sbom-${{ github.ref_name }}.cdx.json" --repo "${{ github.repository }}" --clobber
+
   # Hashes werden von den ECHTEN, veröffentlichten Release-Assets berechnet
   # (erst herunterladen, dann hashen) – nicht von den lokalen Build-Artefakten
   checksums:
