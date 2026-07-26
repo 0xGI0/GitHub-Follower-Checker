@@ -13,18 +13,18 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
 
+      # Alle Werkzeuge exakt gepinnt – Versionsdrift hat CI schon einmal
+      # gebrochen (ruff 0.16.0); Updates bewusst per Commit
       - name: Abhängigkeiten installieren
         run: |
           python -m pip install --upgrade pip
-          # ruff gepinnt: 0.16.0 verschärft die Default-Regeln (74 neue
-          # Findings in Bestandscode) – Upgrade + Fixes separat angehen
-          pip install -r requirements.txt pytest ruff==0.15.22 mypy
+          pip install -r requirements.txt pytest==9.1.1 ruff==0.15.22 mypy==2.3.0 bandit==1.9.4 pip-audit==2.10.1
 
       - name: Lint (ruff)
         run: ruff check .
@@ -34,6 +34,12 @@ jobs:
 
       - name: Syntax-Check
         run: python -m py_compile gfc_core.py gfc_controller.py GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py
+
+      - name: Security-Lint (bandit)
+        run: bandit -q -r gfc_core.py gfc_controller.py GitHubFollowerCheckerGUI.py GitHubFollowerCheckerCLI.py
+
+      - name: CVE-Audit der Abhängigkeiten (pip-audit)
+        run: pip-audit -r requirements.txt
 
       - name: Tests (pytest)
         run: python -m pytest -q

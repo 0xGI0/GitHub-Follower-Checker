@@ -12,7 +12,7 @@ Oberfläche nicht einfriert. Das Token bleibt ausschließlich im
 Arbeitsspeicher – es wird weder gespeichert noch geloggt.
 """
 
-import subprocess
+import subprocess  # nur pip-Selbstinstallation, feste Paketliste  # nosec B404
 import sys
 
 
@@ -32,7 +32,8 @@ def _ensure_dependencies() -> None:
         return
     print(f"📦 Installiere fehlende Pakete: {', '.join(missing)}")
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+        # Feste Argumentliste (sys.executable -m pip), keine Nutzereingabe
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])  # nosec B603
     except subprocess.CalledProcessError:
         print("❌ Automatische Installation fehlgeschlagen.")
         print("   Bitte manuell installieren:  pip install -r requirements.txt")
@@ -768,7 +769,7 @@ class FollowerCheckerView(UiCallbacks):
             if last:
                 try:
                     keyring.delete_password(KEYRING_SERVICE, last)
-                except Exception:
+                except Exception:  # Eintrag/Backend darf fehlen  # nosec B110
                     pass
         _save_settings(self.settings)
 
@@ -778,7 +779,7 @@ class FollowerCheckerView(UiCallbacks):
         if keyring is not None and self.remember_box.value:
             try:
                 keyring.set_password(KEYRING_SERVICE, username, token)
-            except Exception:
+            except Exception:  # Keyring optional, dann kein Speichern  # nosec B110
                 pass
         _save_settings(self.settings)
 
