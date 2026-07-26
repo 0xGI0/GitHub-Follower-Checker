@@ -6,6 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/0xGI0/GitHub-Follower-Checker/badge)](https://scorecard.dev/viewer/?uri=github.com/0xGI0/GitHub-Follower-Checker)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Desktop tool for analyzing your **GitHub follower/following relationships** –
@@ -196,6 +197,28 @@ supports `--version` and `--quiet`.
   the whitelist contain **usernames only**, never credentials.
 * The tool respects GitHub rate limits by pausing between requests and
   shows when the limit resets.
+
+---
+
+## 🛡️ Supply-chain security
+
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/0xGI0/GitHub-Follower-Checker/badge)](https://scorecard.dev/viewer/?uri=github.com/0xGI0/GitHub-Follower-Checker)
+
+* **Signed releases**: SHA-256 checksums (`SHA256SUMS.txt`) ·
+  build provenance attestation (Sigstore) · PGP signatures (`.asc`) –
+  see "Verify your download" above
+* **CodeQL**: static analysis of the Python code and Actions workflows
+  on every push and weekly
+* **Secret scanning with push protection**: blocks accidentally
+  committed credentials
+* **Bandit + pip-audit in CI**: security linting and dependency CVE
+  checks on every push
+* **Dependabot**: automated dependency and actions updates
+* **SBOM per release** (after v2.0.0): CycloneDX bill of materials with
+  exact dependency versions (`sbom-<version>.cdx.json`)
+* **OpenSSF Scorecard**: weekly automated supply-chain assessment
+  (badge above)
+* **Reporting a vulnerability**: confidentially via [SECURITY.md](SECURITY.md)
 
 ---
 

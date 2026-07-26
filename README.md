@@ -6,6 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml/badge.svg)](https://github.com/0xGI0/GitHub-Follower-Checker/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/0xGI0/GitHub-Follower-Checker/badge)](https://scorecard.dev/viewer/?uri=github.com/0xGI0/GitHub-Follower-Checker)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/0xGI0/GitHub-Follower-Checker?style=flat)](https://github.com/0xGI0/GitHub-Follower-Checker/stargazers)
 
@@ -241,6 +242,28 @@ kennt außerdem `--version` und `--quiet`.
   Whitelist enthalten **nur Nutzernamen**, niemals Token oder andere Zugangsdaten.
 * Das Tool respektiert GitHub-Rate-Limits durch Pausen zwischen Requests und
   zeigt bei Erreichen des Limits an, ab wann es weitergeht.
+
+---
+
+## 🛡️ Supply-Chain-Sicherheit
+
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/0xGI0/GitHub-Follower-Checker/badge)](https://scorecard.dev/viewer/?uri=github.com/0xGI0/GitHub-Follower-Checker)
+
+* **Signierte Releases**: SHA-256-Prüfsummen (`SHA256SUMS.txt`) ·
+  Build-Provenance-Attestation (Sigstore) · PGP-Signaturen (`.asc`) –
+  Prüfanleitung oben unter „Download überprüfen"
+* **CodeQL**: statische Analyse von Python-Code und Actions-Workflows
+  bei jedem Push und wöchentlich
+* **Secret Scanning mit Push Protection**: blockiert versehentlich
+  committete Zugangsdaten
+* **Bandit + pip-audit im CI**: Security-Linting des Codes und CVE-Abgleich
+  der Abhängigkeiten bei jedem Push
+* **Dependabot**: automatische Updates für Abhängigkeiten und Actions
+* **SBOM je Release** (nach v2.0.0): CycloneDX-Stückliste aller
+  Abhängigkeiten mit exakten Versionen (`sbom-<version>.cdx.json`)
+* **OpenSSF Scorecard**: wöchentliche automatische Bewertung der
+  Supply-Chain-Praxis (Badge oben)
+* **Sicherheitslücke melden**: vertraulich über [SECURITY.md](SECURITY.md)
 
 ---
 
